@@ -1,10 +1,10 @@
 name: bookprinter
-version: '1.0'
+version: '1.1'
 main: com.majesticrise.bookprinter.BookPrinter
 api-version: '1.21'
 load: STARTUP
 authors: [ majesticrise ]
-description: book
+description: A Paper plugin generates Minecraft books from text files
 website: https://space.bilibili.com/3493114226411557
 commands:
   bookprinter:
