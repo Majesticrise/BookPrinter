@@ -57,6 +57,12 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         }
 
         getLogger().info(languageManager.getRaw("log_plugin_enabled"));
+
+        if (getConfig().getBoolean("enable-buy-command", true)) {
+            getLogger().info("Buy command is enabled.");
+        } else {
+            getLogger().info("Buy command is disabled via config.");
+        }
     }
 
     private void ensureLanguageFilesExist() {
@@ -137,7 +143,11 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
 
             case "buy":
                 if (!checkPermission(sender, "bookprinter.buy")) return true;
-                // 处理 buy 命令（玩家购买）
+                // 检查配置是否启用了购买命令
+                if (!getConfig().getBoolean("enable-buy-command", true)) {
+                    sender.sendMessage(languageManager.get("buy_command_disabled"));
+                    return true;
+                }
                 handleBuyCommand(sender, args);
                 return true;
 

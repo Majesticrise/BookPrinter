@@ -36,6 +36,7 @@ success: "&a书籍生成成功!"
 success_detail: "&e文件: &f{file} &7(共 &e{pages}&7 页)"
 inventory_full: "&c背包空间不足，书籍已掉落在你脚下。"
 console_generated: "&a已为控制台生成书籍 (无法直接给予)。"
+buy_command_disabled: "&c购买功能已在配置中禁用。"
 
 # 内部错误
 internal_error: "&c生成书籍时发生内部错误，请查看服务器日志。"

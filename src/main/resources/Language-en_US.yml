@@ -21,6 +21,7 @@ usage_mode: "&7Current mode: &e{mode}"
 vault_not_available: "&cVault is not installed on this server"
 insufficient_funds: "&cYou don't have enough money"
 payment_failed: "&cPayment failed"
+buy_command_disabled: "&cBuy command is disabled in config."
 
 #File/Path Errors
 path_invalid: "&cInvalid path characters or access denied."
