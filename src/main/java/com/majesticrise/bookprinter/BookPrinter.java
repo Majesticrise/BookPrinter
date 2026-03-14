@@ -174,10 +174,6 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
             sender.sendMessage(languageManager.get("only_players"));
             return;
         }
-        if (!vaultEnabled) {
-            sender.sendMessage(languageManager.get("vault_not_available"));
-            return;
-        }
         if (args.length < 2) {
             sender.sendMessage(languageManager.get("usage_main"));
             return;
@@ -268,15 +264,43 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
             return;
         }
 
-        // 如果是收费模式且发送者是玩家，先检查余额
         final double price = config.getDouble("buy-price", 100.0);
+        final String paymentMethod = config.getString("payment.method", "money");
+        final String expType = config.getString("payment.exp-type", "level");
+
         if (charge) {
             if (!(sender instanceof Player player)) {
                 sender.sendMessage(languageManager.get("only_players"));
                 return;
             }
-            if (!economy.has(player, price)) {
-                sender.sendMessage(languageManager.get("insufficient_funds", Map.of("price", String.valueOf(price))));
+
+            if ("money".equalsIgnoreCase(paymentMethod)) {
+                if (!vaultEnabled) {
+                    sender.sendMessage(languageManager.get("vault_not_available"));
+                    return;
+                }
+                if (!economy.has(player, price)) {
+                    sender.sendMessage(languageManager.get("insufficient_funds", Map.of("price", String.valueOf(price))));
+                    return;
+                }
+            } else
+                if ("exp".equalsIgnoreCase(paymentMethod)) {
+                if ("level".equalsIgnoreCase(expType)) {
+                    int requiredLevel = (int) price;
+                    if (player.getLevel() < requiredLevel) {
+                        sender.sendMessage(languageManager.get("insufficient_exp_level", Map.of("level", String.valueOf(requiredLevel))));
+                        return;
+                    }
+                } else { // point
+                    int requiredPoints = (int) price;
+                    if (player.getTotalExperience() < requiredPoints) {
+                        sender.sendMessage(languageManager.get("insufficient_exp_points", Map.of("points", String.valueOf(requiredPoints))));
+                        return;
+                    }
+                }
+            } else {
+                getLogger().warning("Unknown payment method: " + paymentMethod);
+                sender.sendMessage(languageManager.get("internal_error"));
                 return;
             }
         }
@@ -306,12 +330,33 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
                     Location loc = player.getLocation();
                     Bukkit.getRegionScheduler().execute(this, loc, () -> {
                         // 先扣费，后给书（若扣费失败则放弃）
+                        // 在 Bukkit.getRegionScheduler().execute 的 lambda 中
                         if (charge) {
-                            if (!economy.withdrawPlayer(player, price).transactionSuccess()) {
-                                player.sendMessage(languageManager.get("payment_failed"));
-                                return;
+                            boolean paymentSuccess = false;
+                            if ("money".equalsIgnoreCase(paymentMethod)) {
+                                if (economy.withdrawPlayer(player, price).transactionSuccess()) {
+                                    player.sendMessage(languageManager.get("payment_success", Map.of("price", String.valueOf(price))));
+                                    paymentSuccess = true;
+                                } else {
+                                    player.sendMessage(languageManager.get("payment_failed"));
+                                }
+                            } else if ("exp".equalsIgnoreCase(paymentMethod)) {
+                                if ("level".equalsIgnoreCase(expType)) {
+                                    int requiredLevel = (int) price;
+                                    player.setLevel(player.getLevel() - requiredLevel);
+                                    player.sendMessage(languageManager.get("payment_success_exp_level", Map.of("level", String.valueOf(requiredLevel))));
+                                    paymentSuccess = true;
+                                } else {
+                                    int requiredPoints = (int) price;
+                                    // 使用 setTotalExperience 直接扣除总经验（注意：扣除后等级会自动重新计算）
+                                    player.setTotalExperience(Math.max(0, player.getTotalExperience() - requiredPoints));
+                                    player.sendMessage(languageManager.get("payment_success_exp_points", Map.of("points", String.valueOf(requiredPoints))));
+                                    paymentSuccess = true;
+                                }
                             }
-                            player.sendMessage(languageManager.get("payment_success", Map.of("price", String.valueOf(price))));
+                            if (!paymentSuccess) {
+                                return; // 扣费失败，不给书
+                            }
                         }
                         giveBookToPlayer(player, targetFile.getName(), finalAuthor, pages);
                     });

@@ -1,0 +1,56 @@
+prefix: "&e[BookPrinter] &r"
+
+#Common
+no_permission: "&cNo tienes permiso."
+unknown_command: "&cSubcomando desconocido."
+reload_success: "&aConfiguración y archivos de idioma recargados."
+start_generating: "&eLeyendo y generando libro, por favor espera..."
+payment_success: "&aPago exitoso"
+
+#Info Command
+info_header: "&6========== [BookPrinter] =========="
+info_mode: "&eModo actual: &a{mode}"
+info_lang: "&eIdioma: &a{lang}"
+info_max_bytes: "&eTamaño máximo de archivo: &a{size}"
+info_version: "&eVersión: &a{version}"
+info_footer: "&6=================================="
+
+#Usage
+usage_main: "&eUso: /bookprinter <nombre_archivo> [autor]"
+usage_mode: "&7Modo actual: &e{mode}"
+vault_not_available: "&cVault no está instalado en este servidor"
+insufficient_funds: "&cNo tienes suficiente dinero"
+payment_failed: "&cPago fallido"
+buy_command_disabled: "&cEl comando de compra está deshabilitado en la configuración."
+
+#File/Path Errors
+path_invalid: "&cCaracteres de ruta inválidos o acceso denegado."
+path_no_absolute: "&cEl modo clásico no permite rutas absolutas."
+path_no_subdir: "&cEl modo clásico no permite subdirectorios. Actívalo en la configuración."
+file_not_found: "&cArchivo no encontrado: &f{file}"
+file_too_large: "&cArchivo demasiado grande (&e{size}&c bytes). El límite es &e{limit}&c bytes."
+io_error: "&cError de E/S: &f{error}"
+
+#Results
+success: "&a¡Libro generado exitosamente!"
+success_detail: "&eArchivo: &f{file} &7(Páginas: &e{pages}&7)"
+inventory_full: "&cInventario lleno, el libro cayó a tus pies."
+console_generated: "&aLibro generado para consola (no se puede dar el objeto)."
+insufficient_exp_level: "&c¡Nivel de experiencia insuficiente! Se necesitan {level} niveles."
+insufficient_exp_points: "&c¡Puntos de experiencia insuficientes! Se necesitan {points} XP."
+payment_success_exp_level: "&aCobrados {level} niveles de experiencia."
+payment_success_exp_points: "&aCobrados {points} puntos de experiencia."
+
+#Internal
+internal_error: "&cOcurrió un error interno al generar el libro. Revisa los logs."
+only_player: "&c¿Qué haces? ¿Intentando leer un libro en la consola?"
+
+#Server Logs
+log_plugin_enabled: "[BookPrinter] Plugin habilitado."
+log_dir_failed: "[BookPrinter] Error al crear el directorio de datos del plugin: {path}"
+log_command_not_found: "[BookPrinter] ¡Comando no registrado en plugin.yml!"
+log_lang_loaded: "[BookPrinter] Idioma cargado: {lang}"
+log_path_denied: "[BookPrinter] Acceso a ruta ilegal bloqueado: {path}"
+log_player_offline: "[BookPrinter] El jugador {name} se desconectó durante la generación."
+log_parse_error: "[BookPrinter] Falló el análisis de texto (modo {mode}) para {file}"
+log_io_error: "[BookPrinter] Error de E/S al leer el archivo: {file}"

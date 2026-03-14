@@ -1,5 +1,5 @@
 name: bookprinter
-version: '${project.version}' #修改为同pom.xml版本同步 更适合懒人(偷懒bushi)
+version: '${project.version}'
 main: com.majesticrise.bookprinter.BookPrinter
 api-version: '1.21'
 load: STARTUP

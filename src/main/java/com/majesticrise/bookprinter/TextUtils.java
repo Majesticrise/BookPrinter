@@ -81,8 +81,8 @@ public final class TextUtils {
         String strategy = (classic != null) ? classic.getString("split_strategy", "smart") : "smart";
         String pageMarker = (classic != null) ? classic.getString("page_marker", "---PAGE---") : "---PAGE---";
         int maxLines = (classic != null) ? classic.getInt("max_lines_per_page", 14) : 14;
-        boolean preserveNewlines = (classic != null) ? classic.getBoolean("preserve_newlines", true) : true;
-        boolean trimEmptyPages = (classic != null) ? classic.getBoolean("trim_trailing_empty_pages", false) : false;
+        boolean preserveNewlines = classic == null || classic.getBoolean("preserve_newlines", true);
+        boolean trimEmptyPages = classic != null && classic.getBoolean("trim_trailing_empty_pages", false);
 
         rawText = rawText.replace("\r", "");
 
@@ -101,7 +101,7 @@ public final class TextUtils {
 
     private static String convertHexTags(String text) {
         if (text == null || !text.contains("&#")) return text;
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         java.util.regex.Matcher m = LEGACY_HEX_PATTERN.matcher(text);
         while (m.find()) {
             String hex = m.group(1);
@@ -151,7 +151,7 @@ public final class TextUtils {
                 int lineCount = 0;
                 for (int i = 0; i < lines.length; i++) {
                     String line = lines[i];
-                    if (sb.length() != 0) sb.append("\n");
+                    if (!sb.isEmpty()) sb.append("\n");
                     sb.append(line);
                     lineCount++;
                     boolean isLastLine = (i == lines.length - 1);

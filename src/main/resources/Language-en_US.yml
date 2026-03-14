@@ -36,6 +36,10 @@ success: "&aBook generated successfully!"
 success_detail: "&eFile: &f{file} &7(Pages: &e{pages}&7)"
 inventory_full: "&cInventory full, book dropped at your feet."
 console_generated: "&aBook generated for console (cannot give item)."
+insufficient_exp_level: "&cInsufficient experience level! Need {level} levels."
+insufficient_exp_points: "&cInsufficient experience points! Need {points} XP."
+payment_success_exp_level: "&aCharged {level} experience levels."
+payment_success_exp_points: "&aCharged {points} experience points."
 
 #Internal
 internal_error: "&cInternal error occurred while generating book. Check logs."

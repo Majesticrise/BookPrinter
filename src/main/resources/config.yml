@@ -1,17 +1,23 @@
 # ============================================
 # BookPrinter 配置文件
 # ============================================
-# 语言设置: "zh_CN" (简体中文) 或 "en_US" (English)
+# 语言设置: "zh_CN" (简体中文) ， "en_US" (English)，ES(Español)
 # 语言文件位于插件目录下的 Language-zh_CN.yml
 language: "zh_CN"
 # 插件核心模式选择: "classic" 或 "modern"
 # "classic": 作者写的原模式。支持传统的 & 颜色代码和 &#RRGGBB (Hex)。
 #"modern": 新增功能,专为排版设计,支持classic所有功能。支持 RGB 渐变语法 &#RRGGBB (Hex) 支持传统的 & 颜色代码. 使用 \Line-break\ 强制翻页，\n 强制换行。
 Switch-mode: "modern"
-# 是否启用buy 命令（需要 Vault）
+# 是否启用buy 命令（如果支付方式为金币则需要 Vault）
 enable-buy-command: true
-#安装Vault后设置子命令buy打印书本价格
-buy-price: 100.0
+# 支付方式设置
+payment:
+  # 支付方式: money（金币）或 exp（经验）
+  method: money
+  # 当 method 为 exp 时，经验类型: level（经验等级）或 point（经验点数）
+  exp-type: level
+  # 购买所需金额/经验（经验等级/点数均为整数，但配置中可写小数，代码中取整）
+  buy-price: 100.0
 
 # ============================================
 # Classic 模式配置 ( Switch-mode: "classic" 时生效 )

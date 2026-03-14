@@ -37,6 +37,10 @@ success_detail: "&e文件: &f{file} &7(共 &e{pages}&7 页)"
 inventory_full: "&c背包空间不足，书籍已掉落在你脚下。"
 console_generated: "&a已为控制台生成书籍 (无法直接给予)。"
 buy_command_disabled: "&c购买功能已在配置中禁用。"
+insufficient_exp_level: "&c经验等级不足！需要 {level} 级。"
+insufficient_exp_points: "&c经验点数不足！需要 {points} 点经验。"
+payment_success_exp_level: "&a已扣除 {level} 级经验。"
+payment_success_exp_points: "&a已扣除 {points} 点经验。"
 
 # 内部错误
 internal_error: "&c生成书籍时发生内部错误，请查看服务器日志。"
