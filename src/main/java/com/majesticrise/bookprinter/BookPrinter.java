@@ -56,15 +56,11 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
     }
 
     private void ensureLanguageFilesExist() {
-        if (new File(getDataFolder(), "Language-zh_CN.yml").exists()) {
-            saveResource("Language-zh_CN.yml", true);
-        } else {
+        // 如果文件不存在，才从资源中保存 (false 表示不覆盖已存在文件)
+        if (!new File(getDataFolder(), "Language-zh_CN.yml").exists()) {
             saveResource("Language-zh_CN.yml", false);
         }
-
-        if (new File(getDataFolder(), "Language-en_US.yml").exists()) {
-            saveResource("Language-en_US.yml", true);
-        } else {
+        if (!new File(getDataFolder(), "Language-en_US.yml").exists()) {
             saveResource("Language-en_US.yml", false);
         }
     }
