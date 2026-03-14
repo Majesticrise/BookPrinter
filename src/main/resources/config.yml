@@ -9,6 +9,9 @@ language: "zh_CN"
 #"modern": 新增功能,专为排版设计,支持classic所有功能。支持 RGB 渐变语法 &#RRGGBB (Hex) 支持传统的 & 颜色代码. 使用 \Line-break\ 强制翻页，\n 强制换行。
 Switch-mode: "modern"
 
+#安装Vault后设置子命令buy打印书本价格
+buy-price: 100.0
+
 # ============================================
 # Classic 模式配置 ( Switch-mode: "classic" 时生效 )
 # ============================================

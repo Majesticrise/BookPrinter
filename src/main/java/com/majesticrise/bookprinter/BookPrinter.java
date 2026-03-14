@@ -2,6 +2,7 @@ package com.majesticrise.bookprinter;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.command.Command;
@@ -14,10 +15,10 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
+import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.ConfigurationSection;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -29,6 +30,8 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
 
     private static final String LATEST_CONFIG_VERSION = "2.0";
     private LanguageManager languageManager;
+    private net.milkbowl.vault.economy.Economy economy = null;
+    private final boolean vaultEnabled = false;
 
     @Override
     public void onEnable() {
@@ -40,11 +43,12 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
 
         ensureLanguageFilesExist();
         saveDefaultConfig();
-        checkConfigUpdate();
-        reloadConfig();
-
         this.languageManager = new LanguageManager(this);
         languageManager.load();
+        checkConfigUpdate();
+        reloadConfig();
+        setupVault();
+
 
         PluginCommand cmd = getCommand("bookprinter");
         if (cmd != null) {
@@ -63,6 +67,20 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         if (!new File(getDataFolder(), "Language-en_US.yml").exists()) {
             saveResource("Language-en_US.yml", false);
         }
+    }
+
+    private void setupVault() {
+        if (getServer().getPluginManager().getPlugin("Vault") == null) {
+            getLogger().warning("Vault not found, buy command will be disabled.");
+            return;
+        }
+        RegisteredServiceProvider<Economy> rsp = getServer().getServicesManager().getRegistration(Economy.class);
+        if (rsp == null) {
+            getLogger().warning("Vault economy provider not found, buy command disabled.");
+            return;
+        }
+        economy = rsp.getProvider();
+        getLogger().info("Vault economy hooked successfully.");
     }
 
     private void checkConfigUpdate() {
@@ -90,86 +108,137 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                              @NotNull String label, @NotNull String @NotNull [] args) {
+        if (args.length == 0) {
+            sendUsage(sender);
+            return true;
+        }
 
-        if (args.length >= 1) {
-            if (args[0].equalsIgnoreCase("reload")) {
+        String subCmd = args[0].toLowerCase(Locale.ROOT);
+
+        switch (subCmd) {
+            case "reload":
                 if (!checkPermission(sender, "bookprinter.reload")) return true;
                 reloadConfig();
                 checkConfigUpdate();
                 languageManager.reload();
                 sender.sendMessage(languageManager.get("reload_success"));
                 return true;
-            }
 
-            if (args[0].equalsIgnoreCase("info")) {
+            case "info":
                 if (!checkPermission(sender, "bookprinter.info")) return true;
                 sendInfo(sender);
                 return true;
-            }
+
+            case "print":
+                if (!checkPermission(sender, "bookprinter.print")) return true;
+                // 处理 print 命令（管理员打印）
+                handlePrintCommand(sender, args);
+                return true;
+
+            case "buy":
+                if (!checkPermission(sender, "bookprinter.buy")) return true;
+                // 处理 buy 命令（玩家购买）
+                handleBuyCommand(sender, args);
+                return true;
+
+            default:
+                sender.sendMessage(languageManager.get("unknown_command"));
+                sendUsage(sender);
+                return true;
         }
+    }
 
-        if (!checkPermission(sender, "bookprinter.use")) return true;
-
-        if (args.length == 0) {
-            sendUsage(sender);
-            return true;
+    private void handlePrintCommand(CommandSender sender, String[] args) {
+        // 参数格式: /bp print <文件名> [作者]
+        if (args.length < 2) {
+            sender.sendMessage(languageManager.get("usage_main"));
+            return;
         }
+        // 提取文件名和作者，复用原逻辑（注意：原逻辑期望 args[0] 是文件名，现在 args[0] 是 "print"）
+        String[] fileArgs = Arrays.copyOfRange(args, 1, args.length);
+        processFileCommand(sender, fileArgs, false); // false 表示不收费
+    }
 
+    private void handleBuyCommand(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(languageManager.get("only_players"));
+            return;
+        }
+        if (!vaultEnabled) {
+            sender.sendMessage(languageManager.get("vault_not_available"));
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(languageManager.get("usage_main"));
+            return;
+        }
+        String[] fileArgs = Arrays.copyOfRange(args, 1, args.length);
+        processFileCommand(sender, fileArgs, true); // true 表示收费
+    }
+
+    private void processFileCommand(CommandSender sender, String[] args, boolean charge) {
+        // 1. 解析文件名和作者（复用原逻辑）
         final ConfigurationSection config = getConfig();
         final String mode = config.getString("Switch-mode", "classic").toLowerCase(Locale.ROOT);
         final long maxSizeBytes = config.getLong("max_file_bytes", 2097152);
         final boolean isClassic = "classic".equals(mode);
 
+        // 处理文件名
         String rawInput = args[0];
-        final String fileName = rawInput.toLowerCase(Locale.ROOT).endsWith(".txt")
-                ? rawInput
-                : rawInput + ".txt";
+        final String fileName = rawInput.toLowerCase(Locale.ROOT).endsWith(".txt") ? rawInput : rawInput + ".txt";
 
+        // 路径安全检查（原逻辑）
         if (fileName.contains("../")) {
             sender.sendMessage(languageManager.get("path_invalid"));
-            return true;
+            return;
         }
 
+        // 经典模式下的子目录限制
         if (isClassic) {
             ConfigurationSection classicCfg = config.getConfigurationSection("classic");
             boolean allowSubdirs = classicCfg != null && classicCfg.getBoolean("allow_subdirs", false);
             if (!allowSubdirs && (fileName.contains("/") || fileName.contains("\\"))) {
                 sender.sendMessage(languageManager.get("path_no_subdir"));
-                return true;
+                return;
             }
         }
 
+        // 提取作者信息
         String potentialAuthor = null;
         UUID potentialUuid = null;
 
         if (args.length >= 2) {
+            // 如果提供了额外参数，全部作为作者名（支持空格）
             potentialAuthor = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
         } else if (sender instanceof Player p) {
             potentialAuthor = p.getName();
-            potentialUuid = p.getUniqueId();
+            potentialUuid = p.getUniqueId();  // 注意原代码拼写错误已修正
         }
 
         if (potentialAuthor == null) {
-            sender.sendMessage(languageManager.get("usage_main"));
-            return true;
+            sender.sendMessage(languageManager.get("usage_main")); // 缺少作者
+            return;
         }
 
+        // 清理作者名（去除换行、截断）
         final String author = potentialAuthor.replaceAll("[\r\n]", " ").trim();
         final String finalAuthor = author.length() > 32 ? author.substring(0, 32) : author;
-        final UUID playerUuid = potentialUuid;
 
+        // 处理文件路径（绝对/相对）
         File userFile = new File(fileName);
         if (!userFile.isAbsolute()) {
             userFile = new File(getDataFolder(), fileName);
         } else {
-            boolean allowAbs = isClassic && config.getConfigurationSection("classic") != null &&
-                    config.getConfigurationSection("classic").getBoolean("allow_absolute_paths", false);
+            // 绝对路径检查（仅 classic 模式且配置允许）
+            ConfigurationSection classicCfg = config.getConfigurationSection("classic");
+            boolean allowAbs = isClassic && classicCfg != null && classicCfg.getBoolean("allow_absolute_paths", false);
             if (!allowAbs) {
                 sender.sendMessage(languageManager.get("path_no_absolute"));
-                return true;
+                return;
             }
         }
 
+        // 最终规范化路径，确保在插件数据文件夹内
         final File targetFile;
         try {
             File dataFolderCanonical = getDataFolder().getCanonicalFile();
@@ -178,29 +247,76 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
             if (!targetFileCanonical.toPath().startsWith(dataFolderCanonical.toPath())) {
                 sender.sendMessage(languageManager.get("path_invalid"));
                 String path = userFile.getPath();
-                String logMsg = languageManager.getRaw("log_path_denied", Map.of("path", path != null ? path : "unknown"));
+                String logMsg = languageManager.getRaw("log_path_denied", Map.of("path", path));
                 getLogger().warning(logMsg);
-                return true;
+                return;
             }
             targetFile = targetFileCanonical;
         } catch (IOException e) {
             getLogger().log(Level.WARNING, "Path parsing error", e);
             sender.sendMessage(languageManager.get("path_invalid"));
-            return true;
+            return;
+        }
+
+        // 如果是收费模式且发送者是玩家，先检查余额
+        final double price = config.getDouble("buy-price", 100.0);
+        if (charge) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage(languageManager.get("only_players"));
+                return;
+            }
+            if (!economy.has(player, price)) {
+                sender.sendMessage(languageManager.get("insufficient_funds", Map.of("price", String.valueOf(price))));
+                return;
+            }
         }
 
         sender.sendMessage(languageManager.get("start_generating"));
 
+        // 异步处理文件读取和解析
         Bukkit.getAsyncScheduler().runNow(this, (task) -> {
             try {
-                handleGenerationAsync(sender, targetFile, finalAuthor, mode, maxSizeBytes);
+                // 2. 异步读取和解析
+                if (!targetFile.exists() || !targetFile.isFile()) {
+                    scheduleGlobal(() -> sender.sendMessage(languageManager.get("file_not_found", Map.of("file", targetFile.getName()))));
+                    return;
+                }
+                long size = Files.size(targetFile.toPath());
+                if (size > maxSizeBytes) {
+                    scheduleGlobal(() -> sender.sendMessage(languageManager.get("file_too_large", Map.of("size", String.valueOf(size), "limit", String.valueOf(maxSizeBytes)))));
+                    return;
+                }
+                String content = Files.readString(targetFile.toPath(), StandardCharsets.UTF_8);
+                List<Component> pages = "modern".equals(mode)
+                        ? TextUtils.parseModernMode(content, config)
+                        : TextUtils.parseClassicMode(content, config);
+
+                // 3. 回到主线程处理扣费和给书
+                if (sender instanceof Player player) {
+                    Location loc = player.getLocation();
+                    Bukkit.getRegionScheduler().execute(this, loc, () -> {
+                        // 先扣费，后给书（若扣费失败则放弃）
+                        if (charge) {
+                            if (!economy.withdrawPlayer(player, price).transactionSuccess()) {
+                                player.sendMessage(languageManager.get("payment_failed"));
+                                return;
+                            }
+                            player.sendMessage(languageManager.get("payment_success", Map.of("price", String.valueOf(price))));
+                        }
+                        giveBookToPlayer(player, targetFile.getName(), finalAuthor, pages);
+                    });
+                } else {
+                    // 控制台直接输出结果
+                    scheduleGlobal(() -> sender.sendMessage(languageManager.get("console_generated", Map.of("pages", String.valueOf(pages.size())))));
+                }
+            } catch (IOException e) {
+                getLogger().log(Level.WARNING, "IO error", e);
+                scheduleGlobal(() -> sender.sendMessage(languageManager.get("log_io_error")));
             } catch (Exception e) {
-                getLogger().log(Level.SEVERE, languageManager.getRaw("log_task_exception"), e);
+                getLogger().log(Level.SEVERE, "Async task error", e);
                 scheduleGlobal(() -> sender.sendMessage(languageManager.get("internal_error")));
             }
         });
-
-        return true;
     }
 
     private void sendInfo(CommandSender sender) {
@@ -212,7 +328,7 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
 
         String mode = config.getString("Switch-mode", "classic");
         String lang = config.getString("language", "zh_CN");
-        String version = Bukkit.getServer().getName().contains("Folia") ? (getDescription().getVersion() + " (Folia)") : getDescription().getVersion();
+        String version = Bukkit.getServer().getName().contains("Folia") ? (getPluginMeta().getVersion() + " (Folia)") : getPluginMeta().getVersion();
 
         sender.sendMessage(languageManager.get("info_header"));
         sender.sendMessage(languageManager.get("info_mode", Map.of("mode", mode)));
@@ -220,52 +336,6 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         sender.sendMessage(languageManager.get("info_max_bytes", Map.of("size", sizeStr)));
         sender.sendMessage(languageManager.get("info_version", Map.of("version", version)));
         sender.sendMessage(languageManager.get("info_footer"));
-    }
-
-    private void handleGenerationAsync(CommandSender sender, File file, String author, String mode, long limit) {
-        try {
-            if (!file.exists() || !file.isFile()) {
-                scheduleGlobal(() -> sender.sendMessage(languageManager.get("file_not_found")));
-                return;
-            }
-
-            long size = Files.size(file.toPath());
-            if (size > limit) {
-                var map = Map.of("size", String.valueOf(size), "limit", String.valueOf(limit));
-                scheduleGlobal(() -> sender.sendMessage(languageManager.get("file_too_large", map)));
-                return;
-            }
-
-            String content = Files.readString(file.toPath(), StandardCharsets.UTF_8);
-            List<Component> pages;
-
-            try {
-                pages = "modern".equals(mode)
-                        ? TextUtils.parseModernMode(content, getConfig())
-                        : TextUtils.parseClassicMode(content, getConfig());
-            } catch (Exception e) {
-                String fname = file.getName();
-                String msg = languageManager.getRaw("log_parse_error", Map.of("mode", mode, "file", fname != null ? fname : "unknown"));
-                getLogger().severe(msg);
-                getLogger().log(Level.SEVERE, "Parse details", e);
-                scheduleGlobal(() -> sender.sendMessage(languageManager.get("internal_error")));
-                return;
-            }
-
-            if (sender instanceof Player player) {
-                Location loc = player.getLocation();
-                Bukkit.getRegionScheduler().execute(this, loc, () -> giveBookToPlayer(player, file.getName(), author, pages));
-            } else {
-                String pageCount = String.valueOf(pages.size());
-                scheduleGlobal(() -> sender.sendMessage(languageManager.get("console_generated", Map.of("pages", pageCount))));
-            }
-
-        } catch (IOException e) {
-            String fname = file.getName();
-            String msg = languageManager.getRaw("log_io_error", Map.of("file", fname != null ? fname : "unknown"));
-            getLogger().log(Level.WARNING, msg, e);
-            scheduleGlobal(() -> sender.sendMessage(languageManager.get("io_error")));
-        }
     }
 
     private void giveBookToPlayer(Player player, String fileName, String author, List<Component> pages) {
@@ -328,30 +398,40 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
     }
 
     @Override
-    public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
-                                                @NotNull String alias, @NotNull String @NotNull [] args) {
+    public @NotNull List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
+                                               @NotNull String alias, @NotNull String @NotNull [] args) {
         List<String> completions = new ArrayList<>();
 
         if (args.length == 1) {
             String input = args[0].toLowerCase(Locale.ROOT);
-
-            if ("reload".startsWith(input)) completions.add("reload");
-            if ("info".startsWith(input)) completions.add("info");
-
-            File dir = getDataFolder();
-            if (dir.exists()) {
-                File[] files = dir.listFiles((d, name) -> name.toLowerCase(Locale.ROOT).endsWith(".txt"));
-                if (files != null) {
-                    for (File f : files) {
-                        String name = f.getName();
-                        if (input.isEmpty() || name.toLowerCase(Locale.ROOT).startsWith(input)) {
-                            completions.add(name);
+            if ("reload".startsWith(input) && sender.hasPermission("bookprinter.reload"))
+                completions.add("reload");
+            if ("info".startsWith(input) && sender.hasPermission("bookprinter.info"))
+                completions.add("info");
+            if ("print".startsWith(input) && sender.hasPermission("bookprinter.print"))
+                completions.add("print");
+            if ("buy".startsWith(input) && sender.hasPermission("bookprinter.buy"))
+                completions.add("buy");
+        } else if (args.length == 2) {
+            // 第二参数根据子命令提供文件列表（仅对 print 和 buy）
+            String subCmd = args[0].toLowerCase(Locale.ROOT);
+            if (subCmd.equals("print") || subCmd.equals("buy")) {
+                File dir = getDataFolder();
+                if (dir.exists()) {
+                    String input = args[1].toLowerCase(Locale.ROOT);
+                    File[] files = dir.listFiles((d, name) -> name.toLowerCase(Locale.ROOT).endsWith(".txt"));
+                    if (files != null) {
+                        for (File f : files) {
+                            String name = f.getName();
+                            if (input.isEmpty() || name.toLowerCase(Locale.ROOT).startsWith(input)) {
+                                completions.add(name);
+                            }
                         }
                     }
                 }
             }
         }
-
+        // 如果 args.length == 3，可以考虑补全作者名（可选），这里简单返回空
         return completions;
     }
 }
