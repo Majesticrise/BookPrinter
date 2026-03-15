@@ -1,6 +1,8 @@
 package com.majesticrise.bookprinter;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -14,26 +16,51 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.util.*;
 
+/**
+ * 书籍选择GUI，支持翻页、文件选择和购买/打印确认。
+ * 所有静态字段改为实例字段，避免重载冲突；
+ * 颜色代码使用LegacyComponentSerializer正确解析；
+ * 页码状态同步修复；
+ * 调用主类的公共方法processPurchase。
+ */
 public class BookGUI {
 
     private final JavaPlugin plugin;
-    private static LanguageManager lang = null;
-    private static final List<File> txtFiles = new ArrayList<>();
-    private static final Map<UUID, GUIState> playerState = new HashMap<>(); // 记录玩家当前状态
+    private final LanguageManager lang;
+    private final List<File> txtFiles = new ArrayList<>();
+    private final Map<UUID, GUIState> playerState = new HashMap<>();
 
-    // GUI 标题（使用语言文件）
-    private static String MAIN_TITLE = null;
-    private final String CONFIRM_TITLE;
+    // GUI 标题（从语言文件获取，已去除静态）
+    private static final String MAIN_TITLE_KEY = "gui.main_title";
+    private final String CONFIRM_TITLE_KEY = "gui.confirm_title";
+    private static final String PREV_PAGE_KEY = "gui.prev_page";
+    private static final String NEXT_PAGE_KEY = "gui.next_page";
+    private static final String CLOSE_KEY = "gui.close";
+    private final String CANCEL_KEY = "gui.cancel";
+    private static final String NO_FILES_KEY = "gui.no_files";
+    private final String STATE_LOST_KEY = "gui.state_lost";
+
+    // 界面尺寸常量
+    private static final int MAIN_INV_SIZE = 54;
+    private static final int ITEMS_PER_PAGE = 45;
+    private static final int PREV_SLOT = 45;
+    private static final int NEXT_SLOT = 53;
+    private static final int CLOSE_SLOT = 49;
+    private static final int CONFIRM_INV_SIZE = 9;
+    private static final int CONFIRM_START = 2;
+    private static final int CONFIRM_END = 3;
+    private static final int CANCEL_START = 5;
+    private static final int CANCEL_END = 6;
 
     public BookGUI(JavaPlugin plugin, LanguageManager lang) {
         this.plugin = plugin;
-        BookGUI.lang = lang;
-        MAIN_TITLE = lang.getRaw("gui.main_title"); // 需要添加到语言文件
-        this.CONFIRM_TITLE = lang.getRaw("gui.confirm_title");
-        scanFiles();
+        this.lang = lang;
+        scanFiles(); // 实例方法，填充自己的列表
     }
 
-    // 扫描插件文件夹中的 .txt 文件（不递归子目录，可根据配置修改）
+    /**
+     * 扫描插件文件夹中的 .txt 文件（在主线程调用）
+     */
     private void scanFiles() {
         File folder = plugin.getDataFolder();
         if (!folder.exists()) return;
@@ -41,49 +68,28 @@ public class BookGUI {
         if (files != null) {
             txtFiles.clear();
             txtFiles.addAll(Arrays.asList(files));
-            // 按文件名排序，使显示有序
             txtFiles.sort(Comparator.comparing(File::getName));
         }
     }
-    private static class GUIState {
-        int page = 0;               // 当前页码（从0开始）
-        File selectedFile = null;   // 在确认界面暂存选中的文件
-        boolean charge;             // 是否需要收费（根据权限判断）
-        String author;              // 作者（默认玩家名）
 
-        GUIState(boolean charge, String author) {
-            this.charge = charge;
-            this.author = author;
-        }
-    }
-    private static List<ItemStack> getPageItems(int page) {
-        List<ItemStack> items = new ArrayList<>();
-        int start = page * 45;
-        int end = Math.min(start + 45, txtFiles.size());
-        for (int i = start; i < end; i++) {
-            File file = txtFiles.get(i);
-            ItemStack item = new ItemStack(Material.BOOK);
-            ItemMeta meta = item.getItemMeta();
-            // 文件名作为显示名称
-            String displayName = TextUtils.extractTitleFromFileName(file.getName());
-            meta.displayName(Component.text(displayName));
-            // 添加 lore：文件大小、修改时间等（可选）
-            List<Component> lore = new ArrayList<>();
-            lore.add(Component.text("§7" + file.getName())); // 显示原始文件名
-            lore.add(Component.text("§7Size: " + file.length() + " bytes"));
-            meta.lore(lore);
-            item.setItemMeta(meta);
-            items.add(item);
-        }
-        return items;
-    }
-    public static void openMainGUI(Player player, int page, boolean charge, String author) {
-        // 计算总页数
-        int totalPages = (int) Math.ceil((double) txtFiles.size() / 45);
+    /**
+     * 打开主界面
+     * @param player 玩家
+     * @param page 目标页码（从0开始）
+     * @param charge 是否收费（true=buy, false=print）
+     * @param author 作者名
+     */
+    public void openMainGUI(Player player, int page, boolean charge, String author) {
+        scanFiles(); // 每次打开前刷新文件列表
+
+        int totalPages = (int) Math.ceil((double) txtFiles.size() / ITEMS_PER_PAGE);
         if (totalPages == 0) totalPages = 1;
+        page = Math.max(0, Math.min(page, totalPages - 1));
 
-        // 创建 inventory
-        Inventory inv = Bukkit.createInventory(null, 54, Component.text(MAIN_TITLE + " - " + (page+1) + "/" + totalPages));
+        // 解析标题（支持颜色代码）
+        String titleRaw = lang.getRaw(MAIN_TITLE_KEY) + " - " + (page + 1) + "/" + totalPages;
+        Component title = LegacyComponentSerializer.legacyAmpersand().deserialize(titleRaw);
+        Inventory inv = Bukkit.createInventory(null, MAIN_INV_SIZE, title);
 
         // 放置文件物品
         List<ItemStack> pageItems = getPageItems(page);
@@ -91,84 +97,148 @@ public class BookGUI {
             inv.setItem(i, pageItems.get(i));
         }
 
-        // 放置导航按钮（最后一行 45-53）
-        // 上一页（如果 page > 0）
-        if (page > 0) {
-            ItemStack prev = createButton(Material.ARROW, lang.getRaw("gui.prev_page"));
-            inv.setItem(45, prev);
+        // 如果没有文件，显示提示
+        if (txtFiles.isEmpty()) {
+            ItemStack info = createButton(Material.PAPER, lang.getRaw(NO_FILES_KEY));
+            inv.setItem(22, info);
         }
-        // 下一页（如果 page < totalPages-1）
-        if (page < totalPages - 1) {
-            ItemStack next = createButton(Material.ARROW, lang.getRaw("gui.next_page"));
-            inv.setItem(53, next);
-        }
-        // 关闭按钮（可选）
-        ItemStack close = createButton(Material.BARRIER, lang.getRaw("gui.close"));
-        inv.setItem(49, close);
 
-        // 保存玩家状态
-        playerState.put(player.getUniqueId(), new GUIState(charge, author));
+        // 导航按钮
+        if (page > 0) {
+            inv.setItem(PREV_SLOT, createButton(Material.ARROW, lang.getRaw(PREV_PAGE_KEY)));
+        }
+        if (page < totalPages - 1) {
+            inv.setItem(NEXT_SLOT, createButton(Material.ARROW, lang.getRaw(NEXT_PAGE_KEY)));
+        }
+        inv.setItem(CLOSE_SLOT, createButton(Material.BARRIER, lang.getRaw(CLOSE_KEY)));
+
+        // 更新或创建玩家状态
+        GUIState state = playerState.get(player.getUniqueId());
+        if (state == null) {
+            state = new GUIState(page, charge, author);
+            playerState.put(player.getUniqueId(), state);
+        } else {
+            state.page = page;
+            state.charge = charge;
+            state.author = author;
+            state.selectedFile = null; // 重置选择
+        }
         player.openInventory(inv);
     }
 
-    // 辅助方法：创建带名称的物品
-    private static ItemStack createButton(Material material, String name) {
+    /**
+     * 获取当前页的物品列表
+     */
+    private List<ItemStack> getPageItems(int page) {
+        List<ItemStack> items = new ArrayList<>();
+        int start = page * ITEMS_PER_PAGE;
+        int end = Math.min(start + ITEMS_PER_PAGE, txtFiles.size());
+        for (int i = start; i < end; i++) {
+            File file = txtFiles.get(i);
+            ItemStack item = new ItemStack(Material.BOOK);
+            ItemMeta meta = item.getItemMeta();
+
+            // 显示名称：格式化后的文件名
+            String displayName = TextUtils.extractTitleFromFileName(file.getName());
+            meta.displayName(LegacyComponentSerializer.legacyAmpersand().deserialize(displayName));
+
+            // Lore：原始文件名和大小（使用 Adventure 颜色）
+            List<Component> lore = new ArrayList<>();
+            lore.add(Component.text(file.getName()).color(NamedTextColor.GRAY));
+            lore.add(Component.text("Size: " + file.length() + " bytes").color(NamedTextColor.GRAY));
+            meta.lore(lore);
+
+            item.setItemMeta(meta);
+            items.add(item);
+        }
+        return items;
+    }
+
+    /**
+     * 创建带名称的按钮物品（支持颜色代码）
+     */
+    private static ItemStack createButton(Material material, String nameRaw) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
-        meta.displayName(Component.text(name));
+        Component name = LegacyComponentSerializer.legacyAmpersand().deserialize(nameRaw);
+        meta.displayName(name);
         item.setItemMeta(meta);
         return item;
     }
+
+    /**
+     * 打开确认界面
+     */
     public void openConfirmGUI(Player player, File selectedFile) {
-        // 创建 9 格的 inventory（一行）
-        Inventory inv = Bukkit.createInventory(null, 9, Component.text(CONFIRM_TITLE));
-
-        // 绿色玻璃（确认）
-        ItemStack confirm = createButton(Material.LIME_STAINED_GLASS_PANE, lang.getRaw("gui.confirm"));
-        inv.setItem(2, confirm);
-        inv.setItem(3, confirm);
-        inv.setItem(4, confirm); // 中间放三个，更显眼
-
-        // 红色玻璃（取消）
-        ItemStack cancel = createButton(Material.RED_STAINED_GLASS_PANE, lang.getRaw("gui.cancel"));
-        inv.setItem(5, cancel);
-        inv.setItem(6, cancel);
-        inv.setItem(7, cancel);
-
-        // 更新玩家状态：记录选中的文件
         GUIState state = playerState.get(player.getUniqueId());
-        if (state != null) {
-            state.selectedFile = selectedFile;
-        } else {
-            // 理论上不应该发生，如果发生则创建一个默认状态（但这种情况需要处理）
+        if (state == null) {
+            player.sendMessage(lang.get(STATE_LOST_KEY));
             player.closeInventory();
             return;
         }
+        state.selectedFile = selectedFile;
+
+        // 解析标题
+        Component title = LegacyComponentSerializer.legacyAmpersand().deserialize(lang.getRaw(CONFIRM_TITLE_KEY));
+        Inventory inv = Bukkit.createInventory(null, CONFIRM_INV_SIZE, title);
+
+        // 放置确认按钮（绿色玻璃）
+        String CONFIRM_KEY = "gui.confirm";
+        ItemStack confirm = createButton(Material.LIME_STAINED_GLASS_PANE, lang.getRaw(CONFIRM_KEY));
+        for (int i = CONFIRM_START; i <= CONFIRM_END; i++) {
+            inv.setItem(i, confirm);
+        }
+
+        // 放置取消按钮（红色玻璃）
+        ItemStack cancel = createButton(Material.RED_STAINED_GLASS_PANE, lang.getRaw(CANCEL_KEY));
+        for (int i = CANCEL_START; i <= CANCEL_END; i++) {
+            inv.setItem(i, cancel);
+        }
+
+        ItemStack fileInfo = new ItemStack(Material.WRITTEN_BOOK);
+        ItemMeta meta = fileInfo.getItemMeta();
+        String displayName = TextUtils.extractTitleFromFileName(selectedFile.getName());
+        meta.displayName(LegacyComponentSerializer.legacyAmpersand().deserialize("&e" + displayName));
+        List<Component> lore = new ArrayList<>();
+        lore.add(Component.text(selectedFile.getName()).color(NamedTextColor.GRAY));
+        lore.add(Component.text("Size: " + selectedFile.length() + " bytes").color(NamedTextColor.GRAY));
+        meta.lore(lore);
+        fileInfo.setItemMeta(meta);
+        inv.setItem(4, fileInfo); // 中间槽位显示文件信息
+
         player.openInventory(inv);
     }
+
+    /**
+     * 处理库存点击事件（由主类注册监听器调用）
+     */
     public void handleInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Inventory inv = event.getInventory();
-        String title = ChatColor.stripColor(event.getView().getTitle()); // 去除颜色代码比较
+        String title = event.getView().getTitle(); // 原始标题（可能含颜色代码）
 
-        // 检查是否是我们的 GUI（通过标题前缀判断）
-        if (!title.startsWith(ChatColor.stripColor(MAIN_TITLE)) && !title.startsWith(ChatColor.stripColor(CONFIRM_TITLE))) {
+        // 判断是否属于我们的 GUI（通过标题前缀，忽略颜色）
+        String strippedTitle = ChatColor.stripColor(title);
+        String mainStripped = ChatColor.stripColor(lang.getRaw(MAIN_TITLE_KEY));
+        String confirmStripped = ChatColor.stripColor(lang.getRaw(CONFIRM_TITLE_KEY));
+
+        if (!strippedTitle.startsWith(mainStripped) && !strippedTitle.startsWith(confirmStripped)) {
             return;
         }
 
-        event.setCancelled(true); // 阻止物品移动
-
+        event.setCancelled(true);
         if (event.getCurrentItem() == null || event.getCurrentItem().getType() == Material.AIR) return;
 
-        // 获取玩家状态
         GUIState state = playerState.get(player.getUniqueId());
-        if (state == null) return;
+        if (state == null) {
+            player.sendMessage(lang.get(STATE_LOST_KEY));
+            player.closeInventory();
+            return;
+        }
 
-        if (title.startsWith(ChatColor.stripColor(MAIN_TITLE))) {
-            // 主界面点击
+        if (strippedTitle.startsWith(mainStripped)) {
             handleMainClick(player, inv, event.getSlot(), state);
-        } else if (title.startsWith(ChatColor.stripColor(CONFIRM_TITLE))) {
-            // 确认界面点击
+        } else {
             handleConfirmClick(player, event.getSlot(), state);
         }
     }
@@ -176,50 +246,57 @@ public class BookGUI {
     private void handleMainClick(Player player, Inventory inv, int slot, GUIState state) {
         // 导航按钮区域
         if (slot >= 45) {
-            // 上一页
-            if (slot == 45 && inv.getItem(45) != null && Objects.requireNonNull(inv.getItem(45)).getType() == Material.ARROW) {
+            if (slot == PREV_SLOT && inv.getItem(PREV_SLOT) != null) {
                 openMainGUI(player, state.page - 1, state.charge, state.author);
-            }
-            // 下一页
-            else if (slot == 53 && inv.getItem(53) != null && Objects.requireNonNull(inv.getItem(53)).getType() == Material.ARROW) {
+            } else if (slot == NEXT_SLOT && inv.getItem(NEXT_SLOT) != null) {
                 openMainGUI(player, state.page + 1, state.charge, state.author);
-            }
-            // 关闭
-            else if (slot == 49 && inv.getItem(49) != null && Objects.requireNonNull(inv.getItem(49)).getType() == Material.BARRIER) {
+            } else if (slot == CLOSE_SLOT) {
                 player.closeInventory();
                 playerState.remove(player.getUniqueId());
             }
             return;
         }
 
-        // 点击文件区域（0-44）
-        int index = state.page * 45 + slot;
+        // 点击文件区域
+        int index = state.page * ITEMS_PER_PAGE + slot;
         if (index < txtFiles.size()) {
             File file = txtFiles.get(index);
-            // 打开确认界面
             openConfirmGUI(player, file);
         }
     }
 
     private void handleConfirmClick(Player player, int slot, GUIState state) {
-        if (state.selectedFile == null) return;
-
-        // 判断点击的是确认还是取消
-        if (slot >= 2 && slot <= 4) {
-            // 确认区域：执行生成书籍
+        if (state.selectedFile == null) {
             player.closeInventory();
-            // 调用主类的 processFileCommand 方法（需要传递参数）
-            // 这里假设我们有一个方法可以直接调用，例如：
+            return;
+        }
+
+        if (slot >= CONFIRM_START && slot <= CONFIRM_END) {
+            // 确认
+            player.closeInventory();
+            // 调用主类的公共方法处理购买/打印
             BookPrinter pluginInstance = (BookPrinter) plugin;
-            // 构造参数数组：文件名和作者
-            String[] args = new String[]{state.selectedFile.getName(), state.author};
-            // 注意：processFileCommand 需要 CommandSender（这里是 player）和是否收费
-            pluginInstance.processFileCommand(player, args, state.charge);
+            pluginInstance.processFileCommand(player, new String[]{state.selectedFile.getName(), state.author}, state.charge);
             playerState.remove(player.getUniqueId());
-        } else if (slot >= 5 && slot <= 7) {
-            // 取消区域：返回主界面
+        } else if (slot >= CANCEL_START && slot <= CANCEL_END) {
+            // 取消，返回主界面
             openMainGUI(player, state.page, state.charge, state.author);
         }
     }
 
+    /**
+     * 玩家状态内部类
+     */
+    private static class GUIState {
+        int page;
+        File selectedFile;
+        boolean charge;
+        String author;
+
+        GUIState(int page, boolean charge, String author) {
+            this.page = page;
+            this.charge = charge;
+            this.author = author;
+        }
+    }
 }

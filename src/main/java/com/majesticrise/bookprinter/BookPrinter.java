@@ -22,7 +22,7 @@ import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.ConfigurationSection;
 import org.jetbrains.annotations.NotNull;
-import com.majesticrise.bookprinter.BookGUI;
+
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -54,6 +54,7 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         reloadConfig();
         setupVault();
         getServer().getPluginManager().registerEvents(new GUIListener(this), this);
+        this.bookGUI = new BookGUI(this, languageManager);
 
 
         PluginCommand cmd = getCommand("bookprinter");
@@ -190,7 +191,7 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
                 if (bookGUI == null) {
                     bookGUI = new BookGUI(this, languageManager);
                 }
-                BookGUI.openMainGUI(player, 0, charge, player.getName());
+                bookGUI.openMainGUI(player, 0, charge, player.getName());
                 return true;
 
             default:
