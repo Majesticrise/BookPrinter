@@ -73,7 +73,7 @@ modern:
 | `/bookprinter <文件名> [署名]` | `bookprinter.use` | 生成书籍。 |
 | `/bookprinter reload` | `bookprinter.reload` | 重载配置和语言文件。 |
 | `/bookprinter info` | `bookprinter.info` | 查看插件运行模式和状态。 |
-| `/bookprinter ghi` | `bookprinter.gui` | 查看GUI。 |
+| `/bookprinter gui` | `bookprinter.gui` | 查看GUI。 |
 
 ### 现代模式 写作示例
 
