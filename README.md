@@ -34,7 +34,7 @@
 
 ## 📦 安装
 
-1. 从 [Releases](../../releases) 下载最新版本的 `.jar` 文件。
+1. 下载最新版本的 `.jar` 文件。
 2. 将其放入服务器的 `/plugins` 文件夹。
 3. **重启服务器** (或使用插件管理器热加载)。
 4. 配置文件 `config.yml` 和语言文件将自动生成。
@@ -46,7 +46,7 @@
 在生成的 `config.yml` 中设置你的偏好：
 
 ```yaml
-# 语言设置: "zh_CN" 或 "en_US"
+# 语言设置: "zh_CN" "en_US" "ES"
 language: "zh_CN"
 
 # 核心模式切换: "classic" 或 "modern"
@@ -73,6 +73,7 @@ modern:
 | `/bookprinter <文件名> [署名]` | `bookprinter.use` | 生成书籍。 |
 | `/bookprinter reload` | `bookprinter.reload` | 重载配置和语言文件。 |
 | `/bookprinter info` | `bookprinter.info` | 查看插件运行模式和状态。 |
+| `/bookprinter ghi` | `bookprinter.gui` | 查看GUI。 |
 
 ### 现代模式 写作示例
 
