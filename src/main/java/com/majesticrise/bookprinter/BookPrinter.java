@@ -13,12 +13,16 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.ConfigurationSection;
 import org.jetbrains.annotations.NotNull;
+import com.majesticrise.bookprinter.BookGUI;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +36,7 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
     private LanguageManager languageManager;
     private net.milkbowl.vault.economy.Economy economy = null;
     private final boolean vaultEnabled = false;
+    private BookGUI bookGUI;
 
     @Override
     public void onEnable() {
@@ -48,6 +53,7 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         checkConfigUpdate();
         reloadConfig();
         setupVault();
+        getServer().getPluginManager().registerEvents(new GUIListener(this), this);
 
 
         PluginCommand cmd = getCommand("bookprinter");
@@ -111,6 +117,17 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         }
     }
 
+    private class GUIListener implements Listener {
+        private final BookPrinter plugin;
+        GUIListener(BookPrinter plugin) { this.plugin = plugin; }
+        @EventHandler
+        public void onInventoryClick(InventoryClickEvent event) {
+            if (bookGUI != null) {
+                bookGUI.handleInventoryClick(event);
+            }
+        }
+    }
+
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                              @NotNull String label, @NotNull String @NotNull [] args) {
@@ -151,6 +168,31 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
                 handleBuyCommand(sender, args);
                 return true;
 
+            case "gui":
+                if (!checkPermission(sender, "bookprinter.gui")) return true;
+                if (!(sender instanceof Player player)) {
+                    sender.sendMessage(languageManager.get("only_players"));
+                    return true;
+                }
+                // 检查购买命令是否启用，决定是否收费
+                boolean chargeForBuy = getConfig().getBoolean("enable-buy-command", true);
+                // 如果玩家有 print 权限，则免费；否则如果允许购买且玩家有 buy 权限，则收费；否则无权限
+                boolean charge;
+                if (player.hasPermission("bookprinter.print")) {
+                    charge = false; // 管理员免费
+                } else if (chargeForBuy && player.hasPermission("bookprinter.buy")) {
+                    charge = true; // 普通玩家收费
+                } else {
+                    player.sendMessage(languageManager.get("no_permission"));
+                    return true;
+                }
+                // 打开 GUI
+                if (bookGUI == null) {
+                    bookGUI = new BookGUI(this, languageManager);
+                }
+                BookGUI.openMainGUI(player, 0, charge, player.getName());
+                return true;
+
             default:
                 sender.sendMessage(languageManager.get("unknown_command"));
                 sendUsage(sender);
@@ -182,7 +224,7 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         processFileCommand(sender, fileArgs, true); // true 表示收费
     }
 
-    private void processFileCommand(CommandSender sender, String[] args, boolean charge) {
+    public void processFileCommand(CommandSender sender, String[] args, boolean charge) {
         // 1. 解析文件名和作者（复用原逻辑）
         final ConfigurationSection config = getConfig();
         final String mode = config.getString("Switch-mode", "classic").toLowerCase(Locale.ROOT);

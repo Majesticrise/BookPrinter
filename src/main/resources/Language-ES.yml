@@ -54,3 +54,12 @@ log_path_denied: "[BookPrinter] Acceso a ruta ilegal bloqueado: {path}"
 log_player_offline: "[BookPrinter] El jugador {name} se desconectó durante la generación."
 log_parse_error: "[BookPrinter] Falló el análisis de texto (modo {mode}) para {file}"
 log_io_error: "[BookPrinter] Error de E/S al leer el archivo: {file}"
+
+# GUI
+gui.main_title: "&8Selecciona el libro a imprimir"
+gui.confirm_title: "&8Confirmar impresión"
+gui.prev_page: "&aPágina anterior"
+gui.next_page: "&aSiguiente página"
+gui.close: "&cCerrar"
+gui.confirm: "&a✔ Confirmar"
+gui.cancel: "&c✘ Cancelar"

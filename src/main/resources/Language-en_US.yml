@@ -54,3 +54,12 @@ log_path_denied: "[BookPrinter] Blocked illegal path access: {path}"
 log_player_offline: "[BookPrinter] Player {name} went offline during generation."
 log_parse_error: "[BookPrinter] Text parsing failed ({mode} mode) for {file}"
 log_io_error: "[BookPrinter] IOException reading file: {file}"
+
+# GUI
+gui.main_title: "&8Select the book to print"
+gui.confirm_title: "&8Confirm Printing"
+gui.prev_page: "&aPrevious Page"
+gui.next_page: "&aNext Page"
+gui.close: "&cClose"
+gui.confirm: "&a✔ Confirm"
+gui.cancel: "&c✘ Cancel"

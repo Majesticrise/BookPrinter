@@ -26,3 +26,6 @@ permissions:
   bookprinter.info:
     description: 允许查看插件运行信息
     default: op
+  bookprinter.gui:
+    description: 允许玩家打开gui
+    default: true

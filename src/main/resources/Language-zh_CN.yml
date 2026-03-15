@@ -55,3 +55,12 @@ log_path_denied: "[BookPrinter] 阻止了非法路径访问: {path}"
 log_player_offline: "[BookPrinter] 玩家 {name} 在生成书籍期间下线。"
 log_parse_error: "[BookPrinter] 文本解析失败 ({mode} 模式) 在文件 {file}"
 log_io_error: "[BookPrinter] 读取文件 IOException: {file}"
+
+# GUI
+gui.main_title: "&8选择要打印的书本"
+gui.confirm_title: "&8确认打印"
+gui.prev_page: "&a上一页"
+gui.next_page: "&a下一页"
+gui.close: "&c关闭"
+gui.confirm: "&a✔ 确认"
+gui.cancel: "&c✘ 取消"
