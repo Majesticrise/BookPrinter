@@ -35,7 +35,6 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
     private static final String LATEST_CONFIG_VERSION = "2.0";
     private LanguageManager languageManager;
     private net.milkbowl.vault.economy.Economy economy = null;
-    private final boolean vaultEnabled = false;
     private BookGUI bookGUI;
 
     @Override
@@ -53,7 +52,7 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         checkConfigUpdate();
         reloadConfig();
         setupVault();
-        getServer().getPluginManager().registerEvents(new GUIListener(this), this);
+        getServer().getPluginManager().registerEvents(new GUIListener(), this);
         this.bookGUI = new BookGUI(this, languageManager);
 
 
@@ -79,6 +78,9 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         }
         if (!new File(getDataFolder(), "Language-en_US.yml").exists()) {
             saveResource("Language-en_US.yml", false);
+        }
+        if (!new File(getDataFolder(), "Language-ES.yml").exists()) {
+            saveResource("Language-ES.yml", false);
         }
     }
 
@@ -119,8 +121,7 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
     }
 
     private class GUIListener implements Listener {
-        private final BookPrinter plugin;
-        GUIListener(BookPrinter plugin) { this.plugin = plugin; }
+        GUIListener() {}
         @EventHandler
         public void onInventoryClick(InventoryClickEvent event) {
             if (bookGUI != null) {
@@ -254,14 +255,12 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
 
         // 提取作者信息
         String potentialAuthor = null;
-        UUID potentialUuid = null;
 
         if (args.length >= 2) {
             // 如果提供了额外参数，全部作为作者名（支持空格）
             potentialAuthor = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
         } else if (sender instanceof Player p) {
             potentialAuthor = p.getName();
-            potentialUuid = p.getUniqueId();  // 注意原代码拼写错误已修正
         }
 
         if (potentialAuthor == null) {
@@ -318,7 +317,7 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
             }
 
             if ("money".equalsIgnoreCase(paymentMethod)) {
-                if (!vaultEnabled) {
+                if (economy == null) {
                     sender.sendMessage(languageManager.get("vault_not_available"));
                     return;
                 }
@@ -426,7 +425,8 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
 
         String mode = config.getString("Switch-mode", "classic");
         String lang = config.getString("language", "zh_CN");
-        String version = Bukkit.getServer().getName().contains("Folia") ? (getPluginMeta().getVersion() + " (Folia)") : getPluginMeta().getVersion();
+        // 移除不准确的Folia检测，使用通用版本
+        String version = getPluginMeta().getVersion();
 
         sender.sendMessage(languageManager.get("info_header"));
         sender.sendMessage(languageManager.get("info_mode", Map.of("mode", mode)));
@@ -514,22 +514,45 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
             // 第二参数根据子命令提供文件列表（仅对 print 和 buy）
             String subCmd = args[0].toLowerCase(Locale.ROOT);
             if (subCmd.equals("print") || subCmd.equals("buy")) {
-                File dir = getDataFolder();
-                if (dir.exists()) {
-                    String input = args[1].toLowerCase(Locale.ROOT);
-                    File[] files = dir.listFiles((d, name) -> name.toLowerCase(Locale.ROOT).endsWith(".txt"));
-                    if (files != null) {
-                        for (File f : files) {
-                            String name = f.getName();
-                            if (input.isEmpty() || name.toLowerCase(Locale.ROOT).startsWith(input)) {
-                                completions.add(name);
-                            }
-                        }
+                ConfigurationSection config = getConfig();
+                boolean allowSubdirs = false;
+                String mode = config.getString("Switch-mode", "classic").toLowerCase(Locale.ROOT);
+                if ("classic".equals(mode)) {
+                    ConfigurationSection classicCfg = config.getConfigurationSection("classic");
+                    allowSubdirs = classicCfg != null && classicCfg.getBoolean("allow_subdirs", false);
+                } else {
+                    // Modern mode allows subdirs implicitly or check if needed
+                    allowSubdirs = true; // Assume modern allows subdirs
+                }
+                List<String> fileNames = collectTxtFiles(getDataFolder(), allowSubdirs);
+                String input = args[1].toLowerCase(Locale.ROOT);
+                for (String name : fileNames) {
+                    if (input.isEmpty() || name.toLowerCase(Locale.ROOT).startsWith(input)) {
+                        completions.add(name);
                     }
                 }
             }
         }
         // 如果 args.length == 3，可以考虑补全作者名（可选），这里简单返回空
         return completions;
+    }
+
+    private List<String> collectTxtFiles(File dir, boolean recursive) {
+        List<String> files = new ArrayList<>();
+        if (!dir.exists() || !dir.isDirectory()) return files;
+        collectTxtFilesRecursive(dir, "", recursive, files);
+        return files;
+    }
+
+    private void collectTxtFilesRecursive(File dir, String prefix, boolean recursive, List<String> files) {
+        File[] list = dir.listFiles();
+        if (list == null) return;
+        for (File f : list) {
+            if (f.isDirectory() && recursive) {
+                collectTxtFilesRecursive(f, prefix + f.getName() + "/", recursive, files);
+            } else if (f.isFile() && f.getName().toLowerCase(Locale.ROOT).endsWith(".txt")) {
+                files.add(prefix + f.getName());
+            }
+        }
     }
 }
