@@ -145,6 +145,7 @@ public class BookPrinterCommand implements CommandExecutor, TabCompleter {
 
         if (args.length == 1) {
             String input = args[0].toLowerCase(Locale.ROOT);
+            // 添加所有子命令，并检查相应权限
             if ("reload".startsWith(input) && sender.hasPermission("bookprinter.reload"))
                 completions.add("reload");
             if ("info".startsWith(input) && sender.hasPermission("bookprinter.info"))
@@ -153,9 +154,14 @@ public class BookPrinterCommand implements CommandExecutor, TabCompleter {
                 completions.add("print");
             if ("buy".startsWith(input) && sender.hasPermission("bookprinter.buy"))
                 completions.add("buy");
+            // 新增 gui 子命令补全，需要 bookprinter.gui 权限
+            if ("gui".startsWith(input) && sender.hasPermission("bookprinter.gui"))
+                completions.add("gui");
         } else if (args.length == 2) {
             String subCmd = args[0].toLowerCase(Locale.ROOT);
-            if (subCmd.equals("print") || subCmd.equals("buy")) {
+            // 仅对 print 和 buy 子命令补全文件名
+            if ((subCmd.equals("print") && sender.hasPermission("bookprinter.print")) ||
+                    (subCmd.equals("buy") && sender.hasPermission("bookprinter.buy"))) {
                 org.bukkit.configuration.ConfigurationSection config = plugin.getConfig();
                 boolean allowSubdirs;
                 String mode = config.getString("Switch-mode", "classic").toLowerCase(Locale.ROOT);
@@ -163,7 +169,7 @@ public class BookPrinterCommand implements CommandExecutor, TabCompleter {
                     org.bukkit.configuration.ConfigurationSection classicCfg = config.getConfigurationSection("classic");
                     allowSubdirs = classicCfg != null && classicCfg.getBoolean("allow_subdirs", false);
                 } else {
-                    allowSubdirs = true;
+                    allowSubdirs = true; // 现代模式默认允许子目录
                 }
                 List<String> fileNames = collectTxtFiles(plugin.getDataFolder(), allowSubdirs);
                 String input = args[1].toLowerCase(Locale.ROOT);
