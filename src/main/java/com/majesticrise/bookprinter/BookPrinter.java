@@ -1,47 +1,29 @@
 package com.majesticrise.bookprinter;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.milkbowl.vault.economy.Economy;
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
-import org.bukkit.command.CommandSender;
-import org.bukkit.command.PluginCommand;
-import org.bukkit.command.TabCompleter;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.Listener;
-import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.configuration.ConfigurationSection;
-import org.jetbrains.annotations.NotNull;
 
-
-import java.io.*;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.util.*;
+import java.io.File;
 import java.util.logging.Level;
 
-public final class BookPrinter extends JavaPlugin implements CommandExecutor, TabCompleter {
+public final class BookPrinter extends JavaPlugin {
 
     private static final String LATEST_CONFIG_VERSION = "2.0";
     private LanguageManager languageManager;
     private net.milkbowl.vault.economy.Economy economy = null;
     private BookGUI bookGUI;
+    private BookPrinterCommand commandExecutor;
+    private PaymentService paymentService;
+    private BookService bookService;
 
     @Override
     public void onEnable() {
         File dataFolder = getDataFolder();
         if (!dataFolder.exists() && !dataFolder.mkdirs()) {
-            Bukkit.getPluginManager().disablePlugin(this);
+            getServer().getPluginManager().disablePlugin(this);
             return;
         }
 
@@ -52,14 +34,16 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         checkConfigUpdate();
         reloadConfig();
         setupVault();
-        getServer().getPluginManager().registerEvents(new GUIListener(), this);
         this.bookGUI = new BookGUI(this, languageManager);
+        this.paymentService = new PaymentService(this, economy);
+        this.bookService = new BookService(this, paymentService);
+        this.commandExecutor = new BookPrinterCommand(this, bookService);
+        getServer().getPluginManager().registerEvents(bookGUI, this);
 
-
-        PluginCommand cmd = getCommand("bookprinter");
+        var cmd = getCommand("bookprinter");
         if (cmd != null) {
-            cmd.setExecutor(this);
-            cmd.setTabCompleter(this);
+            cmd.setExecutor(commandExecutor);
+            cmd.setTabCompleter(commandExecutor);
         }
 
         getLogger().info(languageManager.getRaw("log_plugin_enabled"));
@@ -72,7 +56,6 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
     }
 
     private void ensureLanguageFilesExist() {
-        // 如果文件不存在，才从资源中保存 (false 表示不覆盖已存在文件)
         if (!new File(getDataFolder(), "Language-zh_CN.yml").exists()) {
             saveResource("Language-zh_CN.yml", false);
         }
@@ -98,7 +81,7 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         getLogger().info("Vault economy hooked successfully.");
     }
 
-    private void checkConfigUpdate() {
+    public void checkConfigUpdate() {
         File currentConfigFile = new File(getDataFolder(), "config.yml");
         if (!currentConfigFile.exists()) return;
 
@@ -120,439 +103,15 @@ public final class BookPrinter extends JavaPlugin implements CommandExecutor, Ta
         }
     }
 
-    private class GUIListener implements Listener {
-        GUIListener() {}
-        @EventHandler
-        public void onInventoryClick(InventoryClickEvent event) {
-            if (bookGUI != null) {
-                bookGUI.handleInventoryClick(event);
-            }
-        }
+    public LanguageManager getLanguageManager() {
+        return languageManager;
     }
 
-    @Override
-    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
-                             @NotNull String label, @NotNull String @NotNull [] args) {
-        if (args.length == 0) {
-            sendUsage(sender);
-            return true;
-        }
-
-        String subCmd = args[0].toLowerCase(Locale.ROOT);
-
-        switch (subCmd) {
-            case "reload":
-                if (!checkPermission(sender, "bookprinter.reload")) return true;
-                reloadConfig();
-                checkConfigUpdate();
-                languageManager.reload();
-                sender.sendMessage(languageManager.get("reload_success"));
-                return true;
-
-            case "info":
-                if (!checkPermission(sender, "bookprinter.info")) return true;
-                sendInfo(sender);
-                return true;
-
-            case "print":
-                if (!checkPermission(sender, "bookprinter.print")) return true;
-                // 处理 print 命令（管理员打印）
-                handlePrintCommand(sender, args);
-                return true;
-
-            case "buy":
-                if (!checkPermission(sender, "bookprinter.buy")) return true;
-                // 检查配置是否启用了购买命令
-                if (!getConfig().getBoolean("enable-buy-command", true)) {
-                    sender.sendMessage(languageManager.get("buy_command_disabled"));
-                    return true;
-                }
-                handleBuyCommand(sender, args);
-                return true;
-
-            case "gui":
-                if (!checkPermission(sender, "bookprinter.gui")) return true;
-                if (!(sender instanceof Player player)) {
-                    sender.sendMessage(languageManager.get("only_players"));
-                    return true;
-                }
-                // 检查购买命令是否启用，决定是否收费
-                boolean chargeForBuy = getConfig().getBoolean("enable-buy-command", true);
-                // 如果玩家有 print 权限，则免费；否则如果允许购买且玩家有 buy 权限，则收费；否则无权限
-                boolean charge;
-                if (player.hasPermission("bookprinter.print")) {
-                    charge = false; // 管理员免费
-                } else if (chargeForBuy && player.hasPermission("bookprinter.buy")) {
-                    charge = true; // 普通玩家收费
-                } else {
-                    player.sendMessage(languageManager.get("no_permission"));
-                    return true;
-                }
-                // 打开 GUI
-                if (bookGUI == null) {
-                    bookGUI = new BookGUI(this, languageManager);
-                }
-                bookGUI.openMainGUI(player, 0, charge, player.getName());
-                return true;
-
-            default:
-                sender.sendMessage(languageManager.get("unknown_command"));
-                sendUsage(sender);
-                return true;
-        }
+    public BookGUI getBookGUI() {
+        return bookGUI;
     }
 
-    private void handlePrintCommand(CommandSender sender, String[] args) {
-        // 参数格式: /bp print <文件名> [作者]
-        if (args.length < 2) {
-            sender.sendMessage(languageManager.get("usage_main"));
-            return;
-        }
-        // 提取文件名和作者，复用原逻辑（注意：原逻辑期望 args[0] 是文件名，现在 args[0] 是 "print"）
-        String[] fileArgs = Arrays.copyOfRange(args, 1, args.length);
-        processFileCommand(sender, fileArgs, false); // false 表示不收费
-    }
-
-    private void handleBuyCommand(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player player)) {
-            sender.sendMessage(languageManager.get("only_players"));
-            return;
-        }
-        if (args.length < 2) {
-            sender.sendMessage(languageManager.get("usage_main"));
-            return;
-        }
-        String[] fileArgs = Arrays.copyOfRange(args, 1, args.length);
-        processFileCommand(sender, fileArgs, true); // true 表示收费
-    }
-
-    public void processFileCommand(CommandSender sender, String[] args, boolean charge) {
-        // 1. 解析文件名和作者（复用原逻辑）
-        final ConfigurationSection config = getConfig();
-        final String mode = config.getString("Switch-mode", "classic").toLowerCase(Locale.ROOT);
-        final long maxSizeBytes = config.getLong("max_file_bytes", 2097152);
-        final boolean isClassic = "classic".equals(mode);
-
-        // 处理文件名
-        String rawInput = args[0];
-        final String fileName = rawInput.toLowerCase(Locale.ROOT).endsWith(".txt") ? rawInput : rawInput + ".txt";
-
-        // 路径安全检查（原逻辑）
-        if (fileName.contains("../")) {
-            sender.sendMessage(languageManager.get("path_invalid"));
-            return;
-        }
-
-        // 经典模式下的子目录限制
-        if (isClassic) {
-            ConfigurationSection classicCfg = config.getConfigurationSection("classic");
-            boolean allowSubdirs = classicCfg != null && classicCfg.getBoolean("allow_subdirs", false);
-            if (!allowSubdirs && (fileName.contains("/") || fileName.contains("\\"))) {
-                sender.sendMessage(languageManager.get("path_no_subdir"));
-                return;
-            }
-        }
-
-        // 提取作者信息
-        String potentialAuthor = null;
-
-        if (args.length >= 2) {
-            // 如果提供了额外参数，全部作为作者名（支持空格）
-            potentialAuthor = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
-        } else if (sender instanceof Player p) {
-            potentialAuthor = p.getName();
-        }
-
-        if (potentialAuthor == null) {
-            sender.sendMessage(languageManager.get("usage_main")); // 缺少作者
-            return;
-        }
-
-        // 清理作者名（去除换行、截断）
-        final String author = potentialAuthor.replaceAll("[\r\n]", " ").trim();
-        final String finalAuthor = author.length() > 32 ? author.substring(0, 32) : author;
-
-        // 处理文件路径（绝对/相对）
-        File userFile = new File(fileName);
-        if (!userFile.isAbsolute()) {
-            userFile = new File(getDataFolder(), fileName);
-        } else {
-            // 绝对路径检查（仅 classic 模式且配置允许）
-            ConfigurationSection classicCfg = config.getConfigurationSection("classic");
-            boolean allowAbs = isClassic && classicCfg != null && classicCfg.getBoolean("allow_absolute_paths", false);
-            if (!allowAbs) {
-                sender.sendMessage(languageManager.get("path_no_absolute"));
-                return;
-            }
-        }
-
-        // 最终规范化路径，确保在插件数据文件夹内
-        final File targetFile;
-        try {
-            File dataFolderCanonical = getDataFolder().getCanonicalFile();
-            File targetFileCanonical = userFile.getCanonicalFile();
-
-            if (!targetFileCanonical.toPath().startsWith(dataFolderCanonical.toPath())) {
-                sender.sendMessage(languageManager.get("path_invalid"));
-                String path = userFile.getPath();
-                String logMsg = languageManager.getRaw("log_path_denied", Map.of("path", path));
-                getLogger().warning(logMsg);
-                return;
-            }
-            targetFile = targetFileCanonical;
-        } catch (IOException e) {
-            getLogger().log(Level.WARNING, "Path parsing error", e);
-            sender.sendMessage(languageManager.get("path_invalid"));
-            return;
-        }
-
-        final double price = config.getDouble("buy-price", 100.0);
-        final String paymentMethod = config.getString("payment.method", "money");
-        final String expType = config.getString("payment.exp-type", "level");
-
-        if (charge) {
-            if (!(sender instanceof Player player)) {
-                sender.sendMessage(languageManager.get("only_players"));
-                return;
-            }
-
-            if ("money".equalsIgnoreCase(paymentMethod)) {
-                if (economy == null) {
-                    sender.sendMessage(languageManager.get("vault_not_available"));
-                    return;
-                }
-                if (!economy.has(player, price)) {
-                    sender.sendMessage(languageManager.get("insufficient_funds", Map.of("price", String.valueOf(price))));
-                    return;
-                }
-            } else
-                if ("exp".equalsIgnoreCase(paymentMethod)) {
-                if ("level".equalsIgnoreCase(expType)) {
-                    int requiredLevel = (int) price;
-                    if (player.getLevel() < requiredLevel) {
-                        sender.sendMessage(languageManager.get("insufficient_exp_level", Map.of("level", String.valueOf(requiredLevel))));
-                        return;
-                    }
-                } else { // point
-                    int requiredPoints = (int) price;
-                    if (player.getTotalExperience() < requiredPoints) {
-                        sender.sendMessage(languageManager.get("insufficient_exp_points", Map.of("points", String.valueOf(requiredPoints))));
-                        return;
-                    }
-                }
-            } else {
-                getLogger().warning("Unknown payment method: " + paymentMethod);
-                sender.sendMessage(languageManager.get("internal_error"));
-                return;
-            }
-        }
-
-        sender.sendMessage(languageManager.get("start_generating"));
-
-        // 异步处理文件读取和解析
-        Bukkit.getAsyncScheduler().runNow(this, (task) -> {
-            try {
-                // 2. 异步读取和解析
-                if (!targetFile.exists() || !targetFile.isFile()) {
-                    scheduleGlobal(() -> sender.sendMessage(languageManager.get("file_not_found", Map.of("file", targetFile.getName()))));
-                    return;
-                }
-                long size = Files.size(targetFile.toPath());
-                if (size > maxSizeBytes) {
-                    scheduleGlobal(() -> sender.sendMessage(languageManager.get("file_too_large", Map.of("size", String.valueOf(size), "limit", String.valueOf(maxSizeBytes)))));
-                    return;
-                }
-                String content = Files.readString(targetFile.toPath(), StandardCharsets.UTF_8);
-                List<Component> pages = "modern".equals(mode)
-                        ? TextUtils.parseModernMode(content, config)
-                        : TextUtils.parseClassicMode(content, config);
-
-                // 3. 回到主线程处理扣费和给书
-                if (sender instanceof Player player) {
-                    Location loc = player.getLocation();
-                    Bukkit.getRegionScheduler().execute(this, loc, () -> {
-                        // 先扣费，后给书（若扣费失败则放弃）
-                        // 在 Bukkit.getRegionScheduler().execute 的 lambda 中
-                        if (charge) {
-                            boolean paymentSuccess = false;
-                            if ("money".equalsIgnoreCase(paymentMethod)) {
-                                if (economy.withdrawPlayer(player, price).transactionSuccess()) {
-                                    player.sendMessage(languageManager.get("payment_success", Map.of("price", String.valueOf(price))));
-                                    paymentSuccess = true;
-                                } else {
-                                    player.sendMessage(languageManager.get("payment_failed"));
-                                }
-                            } else if ("exp".equalsIgnoreCase(paymentMethod)) {
-                                if ("level".equalsIgnoreCase(expType)) {
-                                    int requiredLevel = (int) price;
-                                    player.setLevel(player.getLevel() - requiredLevel);
-                                    player.sendMessage(languageManager.get("payment_success_exp_level", Map.of("level", String.valueOf(requiredLevel))));
-                                    paymentSuccess = true;
-                                } else {
-                                    int requiredPoints = (int) price;
-                                    // 使用 setTotalExperience 直接扣除总经验（注意：扣除后等级会自动重新计算）
-                                    player.setTotalExperience(Math.max(0, player.getTotalExperience() - requiredPoints));
-                                    player.sendMessage(languageManager.get("payment_success_exp_points", Map.of("points", String.valueOf(requiredPoints))));
-                                    paymentSuccess = true;
-                                }
-                            }
-                            if (!paymentSuccess) {
-                                return; // 扣费失败，不给书
-                            }
-                        }
-                        giveBookToPlayer(player, targetFile.getName(), finalAuthor, pages);
-                    });
-                } else {
-                    // 控制台直接输出结果
-                    scheduleGlobal(() -> sender.sendMessage(languageManager.get("console_generated", Map.of("pages", String.valueOf(pages.size())))));
-                }
-            } catch (IOException e) {
-                getLogger().log(Level.WARNING, "IO error", e);
-                scheduleGlobal(() -> sender.sendMessage(languageManager.get("log_io_error")));
-            } catch (Exception e) {
-                getLogger().log(Level.SEVERE, "Async task error", e);
-                scheduleGlobal(() -> sender.sendMessage(languageManager.get("internal_error")));
-            }
-        });
-    }
-
-    private void sendInfo(CommandSender sender) {
-        ConfigurationSection config = getConfig();
-        long maxBytes = config.getLong("max_file_bytes", 2097152);
-        // 字节转MB显示
-        double mb = maxBytes / (1024.0 * 1024.0);
-        String sizeStr = String.format("%.2f MB", mb);
-
-        String mode = config.getString("Switch-mode", "classic");
-        String lang = config.getString("language", "zh_CN");
-        // 移除不准确的Folia检测，使用通用版本
-        String version = getPluginMeta().getVersion();
-
-        sender.sendMessage(languageManager.get("info_header"));
-        sender.sendMessage(languageManager.get("info_mode", Map.of("mode", mode)));
-        sender.sendMessage(languageManager.get("info_lang", Map.of("lang", lang)));
-        sender.sendMessage(languageManager.get("info_max_bytes", Map.of("size", sizeStr)));
-        sender.sendMessage(languageManager.get("info_version", Map.of("version", version)));
-        sender.sendMessage(languageManager.get("info_footer"));
-    }
-
-    private void giveBookToPlayer(Player player, String fileName, String author, List<Component> pages) {
-        if (!player.isOnline()) {
-            String name = player.getName();
-            getLogger().info(languageManager.getRaw("log_player_offline", Map.of("name", name)));
-            return;
-        }
-
-        try {
-            ItemStack book = createBookItem(fileName, author, pages);
-            Map<Integer, ItemStack> leftover = player.getInventory().addItem(book);
-
-            if (leftover.isEmpty()) {
-                player.sendMessage(languageManager.get("success"));
-                var map = Map.of("file", fileName, "pages", String.valueOf(pages.size()));
-                player.sendMessage(languageManager.get("success_detail", map));
-            } else {
-                player.getWorld().dropItemNaturally(player.getLocation(), book);
-                player.sendMessage(languageManager.get("inventory_full"));
-            }
-
-        } catch (Exception e) {
-            getLogger().log(Level.SEVERE, languageManager.getRaw("log_give_error"), e);
-            player.sendMessage(languageManager.get("internal_error"));
-        }
-    }
-
-    private ItemStack createBookItem(String fileName, String author, List<Component> pages) {
-        ItemStack book = new ItemStack(org.bukkit.Material.WRITTEN_BOOK, 1);
-        BookMeta meta = (BookMeta) book.getItemMeta();
-        if (meta == null) return book;
-
-        String title = TextUtils.extractTitleFromFileName(fileName);
-        meta.title(LegacyComponentSerializer.legacySection().deserialize(title));
-        meta.author(LegacyComponentSerializer.legacySection().deserialize(author));
-        meta.pages(pages);
-        book.setItemMeta(meta);
-        return book;
-    }
-
-    private boolean checkPermission(CommandSender sender, String perm) {
-        if (sender.hasPermission(perm)) return true;
-        sender.sendMessage(languageManager.get("no_permission"));
-        return false;
-    }
-
-    private void sendUsage(CommandSender sender) {
-        sender.sendMessage(languageManager.get("usage_main"));
-        String mode = getConfig().getString("Switch-mode", "classic");
-        sender.sendMessage(languageManager.get("usage_mode", Map.of("mode", mode)));
-    }
-
-    private void scheduleGlobal(Runnable task) {
-        if (Bukkit.isPrimaryThread()) {
-            task.run();
-        } else {
-            Bukkit.getGlobalRegionScheduler().execute(this, task);
-        }
-    }
-
-    @Override
-    public @NotNull List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
-                                               @NotNull String alias, @NotNull String @NotNull [] args) {
-        List<String> completions = new ArrayList<>();
-
-        if (args.length == 1) {
-            String input = args[0].toLowerCase(Locale.ROOT);
-            if ("reload".startsWith(input) && sender.hasPermission("bookprinter.reload"))
-                completions.add("reload");
-            if ("info".startsWith(input) && sender.hasPermission("bookprinter.info"))
-                completions.add("info");
-            if ("print".startsWith(input) && sender.hasPermission("bookprinter.print"))
-                completions.add("print");
-            if ("buy".startsWith(input) && sender.hasPermission("bookprinter.buy"))
-                completions.add("buy");
-        } else if (args.length == 2) {
-            // 第二参数根据子命令提供文件列表（仅对 print 和 buy）
-            String subCmd = args[0].toLowerCase(Locale.ROOT);
-            if (subCmd.equals("print") || subCmd.equals("buy")) {
-                ConfigurationSection config = getConfig();
-                boolean allowSubdirs = false;
-                String mode = config.getString("Switch-mode", "classic").toLowerCase(Locale.ROOT);
-                if ("classic".equals(mode)) {
-                    ConfigurationSection classicCfg = config.getConfigurationSection("classic");
-                    allowSubdirs = classicCfg != null && classicCfg.getBoolean("allow_subdirs", false);
-                } else {
-                    // Modern mode allows subdirs implicitly or check if needed
-                    allowSubdirs = true; // Assume modern allows subdirs
-                }
-                List<String> fileNames = collectTxtFiles(getDataFolder(), allowSubdirs);
-                String input = args[1].toLowerCase(Locale.ROOT);
-                for (String name : fileNames) {
-                    if (input.isEmpty() || name.toLowerCase(Locale.ROOT).startsWith(input)) {
-                        completions.add(name);
-                    }
-                }
-            }
-        }
-        // 如果 args.length == 3，可以考虑补全作者名（可选），这里简单返回空
-        return completions;
-    }
-
-    private List<String> collectTxtFiles(File dir, boolean recursive) {
-        List<String> files = new ArrayList<>();
-        if (!dir.exists() || !dir.isDirectory()) return files;
-        collectTxtFilesRecursive(dir, "", recursive, files);
-        return files;
-    }
-
-    private void collectTxtFilesRecursive(File dir, String prefix, boolean recursive, List<String> files) {
-        File[] list = dir.listFiles();
-        if (list == null) return;
-        for (File f : list) {
-            if (f.isDirectory() && recursive) {
-                collectTxtFilesRecursive(f, prefix + f.getName() + "/", recursive, files);
-            } else if (f.isFile() && f.getName().toLowerCase(Locale.ROOT).endsWith(".txt")) {
-                files.add(prefix + f.getName());
-            }
-        }
+    public BookService getBookService() {
+        return bookService;
     }
 }

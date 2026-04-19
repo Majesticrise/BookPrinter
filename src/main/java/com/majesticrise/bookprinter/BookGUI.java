@@ -7,6 +7,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -23,7 +25,7 @@ import java.util.*;
  * 页码状态同步修复；
  * 调用主类的公共方法processPurchase。
  */
-public class BookGUI {
+public class BookGUI implements Listener {
 
     private final JavaPlugin plugin;
     private final LanguageManager lang;
@@ -212,6 +214,7 @@ public class BookGUI {
     /**
      * 处理库存点击事件（由主类注册监听器调用）
      */
+    @EventHandler
     public void handleInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         Inventory inv = event.getInventory();
@@ -276,7 +279,7 @@ public class BookGUI {
             player.closeInventory();
             // 调用主类的公共方法处理购买/打印
             BookPrinter pluginInstance = (BookPrinter) plugin;
-            pluginInstance.processFileCommand(player, new String[]{state.selectedFile.getName(), state.author}, state.charge);
+            pluginInstance.getBookService().processFileCommand(player, new String[]{state.selectedFile.getName(), state.author}, state.charge);
             playerState.remove(player.getUniqueId());
         } else if (slot >= CANCEL_START && slot <= CANCEL_END) {
             // 取消，返回主界面
