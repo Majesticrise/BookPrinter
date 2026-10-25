@@ -1,7 +1,7 @@
 name: bookprinter
 version: '${project.version}'
 main: com.majesticrise.bookprinter.BookPrinter
-api-version: '1.21'
+api-version: '1.20'
 load: STARTUP
 softdepend: [Vault]  # 新增：软依赖 Vault
 folia-supported: true #新增了Folia支持,所以这里声明支持Folia

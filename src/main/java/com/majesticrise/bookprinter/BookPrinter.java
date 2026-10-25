@@ -11,7 +11,7 @@ import java.util.logging.Level;
 
 public final class BookPrinter extends JavaPlugin {
 
-    private static final String LATEST_CONFIG_VERSION = "2.0";
+    private static final String LATEST_CONFIG_VERSION = "2.1";
     private LanguageManager languageManager;
     private net.milkbowl.vault.economy.Economy economy = null;
     private BookGUI bookGUI;

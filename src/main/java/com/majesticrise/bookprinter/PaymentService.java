@@ -16,9 +16,17 @@ public class PaymentService {
         this.economy = economy;
     }
 
+    // 价格在 config.yml 中位于 payment 节点下；兼容旧版写在顶层的配置
+    private static double readPrice(ConfigurationSection config) {
+        if (config.contains("payment.buy-price")) {
+            return config.getDouble("payment.buy-price", 100.0);
+        }
+        return config.getDouble("buy-price", 100.0);
+    }
+
     public boolean canAfford(Player player) {
         ConfigurationSection config = plugin.getConfig();
-        final double price = config.getDouble("buy-price", 100.0);
+        final double price = readPrice(config);
         final String paymentMethod = config.getString("payment.method", "money");
         final String expType = config.getString("payment.exp-type", "level");
 
@@ -55,7 +63,7 @@ public class PaymentService {
 
     public boolean processPayment(Player player) {
         ConfigurationSection config = plugin.getConfig();
-        final double price = config.getDouble("buy-price", 100.0);
+        final double price = readPrice(config);
         final String paymentMethod = config.getString("payment.method", "money");
         final String expType = config.getString("payment.exp-type", "level");
 
