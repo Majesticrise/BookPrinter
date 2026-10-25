@@ -62,7 +62,7 @@ public class BookPrinterCommand implements CommandExecutor, TabCompleter {
             case "gui":
                 if (!checkPermission(sender, "bookprinter.gui")) return true;
                 if (!(sender instanceof org.bukkit.entity.Player)) {
-                    sender.sendMessage(plugin.getLanguageManager().get("only_players"));
+                    sender.sendMessage(plugin.getLanguageManager().get("only_player"));
                     return true;
                 }
                 org.bukkit.entity.Player player = (org.bukkit.entity.Player) sender;
@@ -97,7 +97,7 @@ public class BookPrinterCommand implements CommandExecutor, TabCompleter {
 
     private void handleBuyCommand(CommandSender sender, String[] args) {
         if (!(sender instanceof org.bukkit.entity.Player player)) {
-            sender.sendMessage(plugin.getLanguageManager().get("only_players"));
+            sender.sendMessage(plugin.getLanguageManager().get("only_player"));
             return;
         }
         if (args.length < 2) {

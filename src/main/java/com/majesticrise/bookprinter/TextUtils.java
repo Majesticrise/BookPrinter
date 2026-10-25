@@ -21,9 +21,16 @@ public final class TextUtils {
     public static final int BOOK_PAGE_WIDTH = 114;
     public static final int BOOK_MAX_LINES = 14;
 
+    /**
+     * 全局安全边距：引擎按 pageWidth - 2px 排版。
+     * 实测中两次翻车都是"个别字形估窄 1px 且恰好落在行尾"（CJK 9→10、W 7→8），
+     * 导致客户端二次折行、页面多出渲染行、最后一行被静默丢弃。
+     * 2px 边距可吸收未知字形的 1~2px 估计误差，代价极小（中文仍为 11 字/行）。
+     */
+    private static final int SAFETY_MARGIN_PX = 2;
+
     private static final Pattern LEGACY_HEX_PATTERN = Pattern.compile("&#([A-Fa-f0-9]{6})");
     private static final Pattern MODERN_LINE_BREAK = Pattern.compile("\\\\Line-break\\\\");
-    private static final Pattern LEGACY_COLOR_SHORT = Pattern.compile("&([0-9a-fk-or])", Pattern.CASE_INSENSITIVE);
 
     private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
     private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacySection();
@@ -62,10 +69,13 @@ public final class TextUtils {
         if (c == ' ') return 4;
         if (c < 127) {
             switch (c) {
-                // 窄字符（1px 字形）
+                // 窄字符（1px 字形）。注意 l 是例外：2px 字形 + 1px 间距 = 3px，
+                // 和 i 归为一类会导致连续 l 的行被客户端二次折行（实测踩坑）
                 case '!': case '\'': case ',': case '.': case ':': case ';':
-                case 'i': case 'l': case '|': case '`':
+                case 'i': case '|': case '`':
                     return 2;
+                case 'l':
+                    return 3;
                 // 半窄字符（3px 字形）
                 case '"': case '(': case ')': case '*': case '/': case 'I':
                 case 'f': case 't': case '[': case ']': case '{': case '}': case '\\':
@@ -74,19 +84,25 @@ public final class TextUtils {
                 case '0': case '1': case '2': case '3': case '4':
                 case '5': case '6': case '7': case '8': case '9':
                     return 5;
-                // 最宽的大写字母（6px 字形）
-                case 'M': case 'W':
+                // 最宽的大写字母（实测校准：W 步进 8px，M 步进 7px）
+                case 'W':
+                    return 8;
+                case 'M':
                     return 7;
                 // 其余 ASCII 字母/符号按 5px 字形处理
                 default:
                     return 6;
             }
         }
-        if (isWideGlyph(c)) return 9;
+        if (isWideGlyph(c)) return 10;
         return 6; // 西里尔、希腊等其他 Unicode 字符
     }
 
-    /** CJK 等全角字符在原版字体中为 8px 字形 + 1px 间距 = 9px */
+    /**
+     * CJK 等全角字符的宽度。实测原版客户端每行只放得下 11 个全角字符
+     * （114px），即实际步进约 10px 而非理论上的 9px——按 10 计才能保证
+     * 引擎排出的行客户端不会再二次折行（二次折行会产生单字孤行并挤掉页底内容）。
+     */
     private static boolean isWideGlyph(char c) {
         return (c >= 0x1100 && c <= 0x115F)    // Hangul Jamo
                 || (c >= 0x2E80 && c <= 0xA4CF) // CJK 部首/符号/注音/平假名/片假名
@@ -96,34 +112,6 @@ public final class TextUtils {
                 || (c >= 0xFE10 && c <= 0xFE6F)
                 || (c >= 0xFF00 && c <= 0xFF60) // 全角形式
                 || (c >= 0xFFE0 && c <= 0xFFE6);
-    }
-
-    /**
-     * 计算含 § 颜色代码字符串的渲染像素宽度。
-     * 颜色代码本身不占宽度，粗体（§l）使每个字符 +1px。
-     */
-    public static int legacyWidth(String s) {
-        int width = 0;
-        boolean bold = false;
-        int i = 0;
-        while (i < s.length()) {
-            char c = s.charAt(i);
-            if (c == '§' && i + 1 < s.length()) {
-                char code = Character.toLowerCase(s.charAt(i + 1));
-                if (code == 'x') {
-                    i = Math.min(s.length(), i + 14); // §x + 6 组 §h 共 14 字符
-                    continue;
-                }
-                if ((code >= '0' && code <= '9') || (code >= 'a' && code <= 'f')) bold = false;
-                else if (code == 'l') bold = true;
-                else if (code == 'r') bold = false;
-                i += 2;
-                continue;
-            }
-            width += baseCharWidth(c) + (bold ? 1 : 0);
-            i++;
-        }
-        return width;
     }
 
     /**
@@ -190,6 +178,16 @@ public final class TextUtils {
     }
 
     /**
+     * 剥掉行尾的可见空格：它们不渲染任何内容，却占 4px 预算，
+     * 且可能被客户端单独折成一条空渲染行，把页底内容挤丢（实测踩坑）。
+     */
+    private static String trimTrailingSpaces(String s) {
+        int end = s.length();
+        while (end > 0 && s.charAt(end - 1) == ' ') end--;
+        return end == s.length() ? s : s.substring(0, end);
+    }
+
+    /**
      * 按像素宽度把文本（可含 \n）断成若干视觉行。
      * wordWrap=true 时优先在空格处断行（与客户端行为一致），
      * 没有空格（如中文长句）则逐字符硬断；断行后自动恢复格式状态。
@@ -228,7 +226,9 @@ public final class TextUtils {
                         break;
                     }
                     w += t.width();
-                    if (wordWrap && " ".equals(t.text())) {
+                    // 可断行点：空格之后，以及全角字符之后（客户端对 CJK 逐字断行，
+                    // 与其保持一致可避免 "page 14" 后接中文时产生孤行）
+                    if (wordWrap && (" ".equals(t.text()) || isWideGlyph(t.text().charAt(0)))) {
                         breakToken = j + 1;
                         breakLen = cur.length();
                     }
@@ -236,16 +236,16 @@ public final class TextUtils {
                 j++;
             }
             if (forcedBreak) {
-                out.add(cur.toString());
+                out.add(trimTrailingSpaces(cur.toString()));
                 i = j + 1;
             } else if (hardStop >= 0 && wordWrap && breakToken > i) {
-                out.add(cur.substring(0, breakLen));
+                out.add(trimTrailingSpaces(cur.substring(0, breakLen)));
                 i = breakToken;
             } else if (hardStop >= 0) {
-                out.add(cur.substring(0, hardLen));
+                out.add(trimTrailingSpaces(cur.substring(0, hardLen)));
                 i = hardStop;
             } else {
-                out.add(cur.toString());
+                out.add(trimTrailingSpaces(cur.toString()));
                 break;
             }
         }
@@ -317,10 +317,10 @@ public final class TextUtils {
 
         List<String> pageTexts;
         if (autoFit) {
-            // 自动排版：以客户端的物理限制为准（最多 14 行 / 114px 宽），
+            // 自动排版：以客户端的物理限制为准（最多 14 行 / 114px 宽，内含 2px 安全边距），
             // max_chars_per_page 在此模式下不再参与计算。
             int effLines = Math.min(Math.max(1, maxLines), BOOK_MAX_LINES);
-            int effWidth = Math.min(Math.max(16, pageWidth), BOOK_PAGE_WIDTH);
+            int effWidth = Math.max(16, Math.min(Math.max(16, pageWidth), BOOK_PAGE_WIDTH) - SAFETY_MARGIN_PX);
             pageTexts = autoFitPages(hexProcessed, strategy, pageMarker, effLines, effWidth, preserveNewlines, trimEmptyPages);
         } else {
             pageTexts = splitToPagesSafe(hexProcessed, maxChars, strategy, pageMarker, maxLines, preserveNewlines, trimEmptyPages);
@@ -386,7 +386,7 @@ public final class TextUtils {
             // 若该段未超出一页（≤14 行），保留原始组件，
             // 避免 legacy 往返丢失 <click>/<hover> 等 MiniMessage 高级功能。
             String legacy = LEGACY_HEX_SERIALIZER.serialize(pageComponent);
-            List<String> visual = wrapLegacyToLines(legacy, BOOK_PAGE_WIDTH, true);
+            List<String> visual = wrapLegacyToLines(legacy, BOOK_PAGE_WIDTH - SAFETY_MARGIN_PX, true);
             if (visual.size() <= BOOK_MAX_LINES) {
                 pages.add(pageComponent);
                 continue;

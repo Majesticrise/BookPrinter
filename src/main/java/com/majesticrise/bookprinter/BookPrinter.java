@@ -93,7 +93,8 @@ public final class BookPrinter extends JavaPlugin {
                 File backupFile = new File(getDataFolder(), "config_old_" + System.currentTimeMillis() + ".yml");
                 if (currentConfigFile.renameTo(backupFile)) {
                     saveDefaultConfig();
-                    String msg = languageManager.getRaw("log_config_updated");
+                    String msg = languageManager.getRaw("log_config_updated",
+                            "[BookPrinter] Config outdated - old file backed up, new config generated.");
                     getLogger().warning(msg);
                     reloadConfig();
                 }

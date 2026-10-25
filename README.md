@@ -158,4 +158,4 @@ payment:
 
 ## 📜 许可证
 
-本项目采用 [LGPL-3.0](LICENSE) 许可证。
+本项目采用 [LGPL-2.1](LICENSE) 许可证。

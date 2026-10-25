@@ -159,4 +159,4 @@ Con classic.preserve_newlines activado, las líneas en blanco también se conser
 
 ## 📜 Licencia
 
-Este proyecto está bajo la licencia [LGPL-3.0](LICENSE).
+Este proyecto está bajo la licencia [LGPL-2.1](LICENSE).

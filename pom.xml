@@ -6,7 +6,7 @@
 
     <groupId>com.majesticrise</groupId>
     <artifactId>bookprinter</artifactId>
-    <version>1.4</version>
+    <version>1.5</version>
     <packaging>jar</packaging>
 
     <name>BookPrinter</name>

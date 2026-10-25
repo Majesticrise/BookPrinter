@@ -159,4 +159,4 @@ With classic.preserve_newlines enabled, blank lines are preserved too.
 
 ## 📜 License
 
-This project is licensed under the [LGPL-3.0](LICENSE).
+This project is licensed under the [LGPL-2.1](LICENSE).

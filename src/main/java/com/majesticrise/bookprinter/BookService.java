@@ -13,6 +13,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -99,11 +100,25 @@ public class BookService {
 
         if (charge) {
             if (!(sender instanceof Player player)) {
-                sender.sendMessage(plugin.getLanguageManager().get("only_players"));
+                sender.sendMessage(plugin.getLanguageManager().get("only_player"));
                 return;
             }
             if (!paymentService.canAfford(player)) {
                 return;
+            }
+            // 购买前展示本次定价（与 processPayment 扣款同一配置）
+            String method = config.getString("payment.method", "money");
+            double price = paymentService.getPrice();
+            var langMgr = plugin.getLanguageManager();
+            if ("exp".equalsIgnoreCase(method)) {
+                int amount = (int) price;
+                if ("level".equalsIgnoreCase(config.getString("payment.exp-type", "point"))) {
+                    sender.sendMessage(langMgr.get("buy_price_exp_level", Map.of("level", String.valueOf(amount)), "&eThis book costs &f{level} &eexp level(s)."));
+                } else {
+                    sender.sendMessage(langMgr.get("buy_price_exp_points", Map.of("points", String.valueOf(amount)), "&eThis book costs &f{points} &eexp points."));
+                }
+            } else {
+                sender.sendMessage(langMgr.get("buy_price_money", Map.of("price", String.valueOf(price)), "&eThis book costs &f{price}&e."));
             }
         }
 
@@ -121,9 +136,22 @@ public class BookService {
                     return;
                 }
                 String content = Files.readString(targetFile.toPath(), StandardCharsets.UTF_8);
-                List<Component> pages = "modern".equals(mode)
+                List<Component> parsedPages = "modern".equals(mode)
                         ? TextUtils.parseModernMode(content, config)
                         : TextUtils.parseClassicMode(content, config);
+
+                // 原版客户端对成书有 100 页上限，超限的书可能无法打开
+                final int MAX_PAGES = 100;
+                List<Component> capped = parsedPages;
+                if (parsedPages.size() > MAX_PAGES) {
+                    final long originalPages = parsedPages.size();
+                    capped = new ArrayList<>(parsedPages.subList(0, MAX_PAGES));
+                    final var langMgr = plugin.getLanguageManager();
+                    scheduleGlobal(() -> sender.sendMessage(langMgr.get("pages_truncated",
+                            Map.of("max", String.valueOf(MAX_PAGES), "pages", String.valueOf(originalPages)),
+                            "&cNote: content too long, truncated to the first {max} pages (was {pages}).")));
+                }
+                final List<Component> pages = capped;
 
                 if (sender instanceof Player player) {
                     Location loc = player.getLocation();
@@ -133,7 +161,7 @@ public class BookService {
                                 return;
                             }
                         }
-                        giveBookToPlayer(player, targetFile.getName(), finalAuthor, pages);
+                        giveBookToPlayer(player, targetFile.getName(), finalAuthor, pages, charge);
                     });
                 } else {
                     scheduleGlobal(() -> sender.sendMessage(plugin.getLanguageManager().get("console_generated", Map.of("pages", String.valueOf(pages.size())))));
@@ -148,7 +176,7 @@ public class BookService {
         });
     }
 
-    private void giveBookToPlayer(Player player, String fileName, String author, List<Component> pages) {
+    private void giveBookToPlayer(Player player, String fileName, String author, List<Component> pages, boolean charge) {
         if (!player.isOnline()) {
             String name = player.getName();
             plugin.getLogger().info(plugin.getLanguageManager().getRaw("log_player_offline", Map.of("name", name)));
@@ -169,7 +197,12 @@ public class BookService {
             }
 
         } catch (Exception e) {
-            plugin.getLogger().log(java.util.logging.Level.SEVERE, plugin.getLanguageManager().getRaw("log_give_error"), e);
+            plugin.getLogger().log(java.util.logging.Level.SEVERE,
+                    plugin.getLanguageManager().getRaw("log_give_error", "[BookPrinter] Failed to give book item to player."), e);
+            // 付款已扣但发书失败，退还费用避免玩家损失
+            if (charge) {
+                paymentService.refund(player);
+            }
             player.sendMessage(plugin.getLanguageManager().get("internal_error"));
         }
     }
